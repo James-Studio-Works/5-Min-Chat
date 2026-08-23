@@ -1,7 +1,8 @@
 const TABS = [
-  { id: "feed", label: "Feed", icon: "▦" },
-  { id: "newpost", label: "Post", icon: "+" },
-  { id: "chat", label: "5-Min Chat", icon: "◔" },
+  { id: "feed", label: "Feed", icon: "🏠" },
+  { id: "newpost", label: "Post", icon: "📷" },
+  { id: "chat", label: "Chat", icon: "💬" },
+  { id: "profile", label: "Profile", icon: "👤" },
 ];
 
 export default function TabBar({ activeTab, onChange }) {

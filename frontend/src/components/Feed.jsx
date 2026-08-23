@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getOrCreatePersistentId } from "../identity.js";
+import { getOrCreatePersistentId, getDisplayName } from "../identity.js";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
 
@@ -13,10 +13,97 @@ function timeAgo(iso) {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-export default function Feed({ refreshSignal }) {
+function CommentSection({ postId }) {
+  const [comments, setComments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [draft, setDraft] = useState("");
+  const [error, setError] = useState(null);
+  const [posting, setPosting] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/posts/${postId}/comments`);
+      const data = await res.json();
+      if (res.ok) setComments(data.comments || []);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [postId]);
+
+  async function submit(e) {
+    e.preventDefault();
+    const text = draft.trim();
+    if (!text) return;
+    setPosting(true);
+    setError(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/posts/${postId}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          persistentId: getOrCreatePersistentId(),
+          username: getDisplayName(),
+          text,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(
+          data?.error === "moderated"
+            ? "That comment didn't meet the content guidelines."
+            : "Couldn't post that comment."
+        );
+      }
+      setComments((prev) => [...prev, data.comment]);
+      setDraft("");
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setPosting(false);
+    }
+  }
+
+  return (
+    <div className="comment-section">
+      {loading && <p className="chat-hint small">Loading comments…</p>}
+      {!loading && comments.length === 0 && (
+        <p className="chat-hint small">No comments yet.</p>
+      )}
+      <div className="comment-list">
+        {comments.map((c) => (
+          <div key={c.id} className="comment-row">
+            <strong>{c.username}</strong> {c.text}
+          </div>
+        ))}
+      </div>
+      {error && <p className="error-text small">{error}</p>}
+      <form className="comment-form" onSubmit={submit}>
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Add a comment…"
+          maxLength={280}
+        />
+        <button type="submit" className="link-btn" disabled={posting || !draft.trim()}>
+          Post
+        </button>
+      </form>
+    </div>
+  );
+}
+
+export default function Feed({ refreshSignal, onViewProfile }) {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [expandedPostId, setExpandedPostId] = useState(null);
   const persistentId = getOrCreatePersistentId();
 
   async function loadFeed() {
@@ -43,7 +130,6 @@ export default function Feed({ refreshSignal }) {
   }, [refreshSignal]);
 
   async function toggleLike(postId) {
-    // optimistic update
     setPosts((prev) =>
       prev.map((p) => {
         if (p.id !== postId) return p;
@@ -61,8 +147,7 @@ export default function Feed({ refreshSignal }) {
         body: JSON.stringify({ persistentId }),
       });
     } catch {
-      // silently ignore - optimistic UI already reflects intent; a manual
-      // refresh will correct any drift if the request actually failed
+      // optimistic UI already reflects intent; ignore transient failures
     }
   }
 
@@ -101,10 +186,16 @@ export default function Feed({ refreshSignal }) {
       <div className="post-list">
         {posts.map((post) => {
           const liked = (post.likes || []).includes(persistentId);
+          const isExpanded = expandedPostId === post.id;
           return (
             <div key={post.id} className="post-card">
               <div className="post-header">
-                <span className="post-username">{post.username}</span>
+                <button
+                  className="post-username-btn"
+                  onClick={() => onViewProfile?.(post.persistent_id)}
+                >
+                  {post.username}
+                </button>
                 <span className="post-time">{timeAgo(post.created_at)}</span>
               </div>
               <img className="post-image" src={post.image_url} alt="" loading="lazy" />
@@ -116,7 +207,14 @@ export default function Feed({ refreshSignal }) {
                 >
                   {liked ? "♥" : "♡"} {(post.likes || []).length}
                 </button>
+                <button
+                  className="link-btn"
+                  onClick={() => setExpandedPostId(isExpanded ? null : post.id)}
+                >
+                  {isExpanded ? "Hide comments" : "Comments"}
+                </button>
               </div>
+              {isExpanded && <CommentSection postId={post.id} />}
             </div>
           );
         })}

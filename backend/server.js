@@ -96,6 +96,13 @@ app.post("/api/posts", requireSupabase, async (req, res) => {
     }
   }
 
+  // Keep a lightweight profile row in sync so a profile page exists even
+  // for someone who's never explicitly "set up" one - the first post
+  // creates it. Best-effort: a failure here doesn't block the post itself.
+  await supabase
+    .from("profiles")
+    .upsert({ persistent_id: persistentId, username: safeUsername }, { onConflict: "persistent_id" });
+
   const { data, error } = await supabase
     .from("posts")
     .insert({
@@ -142,6 +149,176 @@ app.post("/api/posts/:id/like", requireSupabase, async (req, res) => {
 
   if (error) return res.status(500).json({ error: error.message });
   res.json({ post: data, liked: !alreadyLiked });
+});
+
+// ---------------------------------------------------------------------
+// Profiles + Follow
+// ---------------------------------------------------------------------
+app.get("/api/profiles/:persistentId", requireSupabase, async (req, res) => {
+  const { persistentId } = req.params;
+  const viewerPersistentId = typeof req.query.viewerId === "string" ? req.query.viewerId : null;
+
+  const [{ data: profile }, { data: posts }, followerCountRes, followingCountRes] = await Promise.all([
+    supabase.from("profiles").select("*").eq("persistent_id", persistentId).maybeSingle(),
+    supabase
+      .from("posts")
+      .select("*")
+      .eq("persistent_id", persistentId)
+      .order("created_at", { ascending: false })
+      .limit(50),
+    supabase.from("follows").select("*", { count: "exact", head: true }).eq("following_id", persistentId),
+    supabase.from("follows").select("*", { count: "exact", head: true }).eq("follower_id", persistentId),
+  ]);
+
+  let isFollowing = false;
+  if (viewerPersistentId && viewerPersistentId !== persistentId) {
+    const { data: followRow } = await supabase
+      .from("follows")
+      .select("*")
+      .eq("follower_id", viewerPersistentId)
+      .eq("following_id", persistentId)
+      .maybeSingle();
+    isFollowing = !!followRow;
+  }
+
+  res.json({
+    profile: {
+      persistentId,
+      username: profile?.username || posts?.[0]?.username || "Anonymous",
+      bio: profile?.bio || "",
+      avatarUrl: profile?.avatar_url || null,
+    },
+    posts: posts || [],
+    followerCount: followerCountRes.count || 0,
+    followingCount: followingCountRes.count || 0,
+    isFollowing,
+  });
+});
+
+app.post("/api/profiles/me", requireSupabase, async (req, res) => {
+  const { persistentId, username, bio, avatarUrl } = req.body || {};
+
+  if (typeof persistentId !== "string" || persistentId.length < 8) {
+    return res.status(400).json({ error: "invalid_persistent_id" });
+  }
+
+  if (typeof bio === "string" && bio.trim()) {
+    const modResult = await moderateMessage(bio.trim());
+    if (!modResult.allowed) {
+      return res.status(400).json({ error: "moderated", reason: modResult.reason });
+    }
+  }
+
+  const safeUsername =
+    typeof username === "string" && username.trim() ? username.trim().slice(0, 20) : "Anonymous";
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .upsert(
+      {
+        persistent_id: persistentId,
+        username: safeUsername,
+        bio: typeof bio === "string" ? bio.trim().slice(0, 160) : null,
+        avatar_url: typeof avatarUrl === "string" ? avatarUrl : null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "persistent_id" }
+    )
+    .select()
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ profile: data });
+});
+
+app.post("/api/follow", requireSupabase, async (req, res) => {
+  const { persistentId, targetPersistentId } = req.body || {};
+
+  if (typeof persistentId !== "string" || persistentId.length < 8) {
+    return res.status(400).json({ error: "invalid_persistent_id" });
+  }
+  if (typeof targetPersistentId !== "string" || targetPersistentId.length < 8) {
+    return res.status(400).json({ error: "invalid_target" });
+  }
+  if (persistentId === targetPersistentId) {
+    return res.status(400).json({ error: "cannot_follow_self" });
+  }
+
+  const { data: existing } = await supabase
+    .from("follows")
+    .select("*")
+    .eq("follower_id", persistentId)
+    .eq("following_id", targetPersistentId)
+    .maybeSingle();
+
+  if (existing) {
+    const { error } = await supabase
+      .from("follows")
+      .delete()
+      .eq("follower_id", persistentId)
+      .eq("following_id", targetPersistentId);
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ following: false });
+  }
+
+  const { error } = await supabase
+    .from("follows")
+    .insert({ follower_id: persistentId, following_id: targetPersistentId });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ following: true });
+});
+
+// ---------------------------------------------------------------------
+// Comments
+// ---------------------------------------------------------------------
+app.get("/api/posts/:id/comments", requireSupabase, async (req, res) => {
+  const { id } = req.params;
+  const { data, error } = await supabase
+    .from("comments")
+    .select("*")
+    .eq("post_id", id)
+    .order("created_at", { ascending: true })
+    .limit(200);
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ comments: data });
+});
+
+app.post("/api/posts/:id/comments", requireSupabase, async (req, res) => {
+  const { id } = req.params;
+  const { persistentId, username, text } = req.body || {};
+
+  if (typeof persistentId !== "string" || persistentId.length < 8) {
+    return res.status(400).json({ error: "invalid_persistent_id" });
+  }
+  if (typeof text !== "string" || !text.trim()) {
+    return res.status(400).json({ error: "empty_comment" });
+  }
+  if (text.trim().length > 280) {
+    return res.status(400).json({ error: "too_long" });
+  }
+
+  const modResult = await moderateMessage(text.trim());
+  if (!modResult.allowed) {
+    return res.status(400).json({ error: "moderated", reason: modResult.reason });
+  }
+
+  const safeUsername =
+    typeof username === "string" && username.trim() ? username.trim().slice(0, 20) : "Anonymous";
+
+  const { data, error } = await supabase
+    .from("comments")
+    .insert({
+      post_id: id,
+      persistent_id: persistentId,
+      username: safeUsername,
+      text: text.trim(),
+    })
+    .select()
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ comment: data });
 });
 
 app.get("/", (_req, res) => {

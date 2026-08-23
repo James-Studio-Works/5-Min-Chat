@@ -6,7 +6,7 @@ export default function Waiting({ onCancel, yourName }) {
         <p className="you-are">
           You're <strong>{yourName || "…"}</strong>
         </p>
-        <h2>Searching for a signal…</h2>
+        <h2>Finding someone to chat with…</h2>
         <p className="lede">This usually takes a few seconds.</p>
         <button className="btn-secondary" onClick={onCancel}>
           Cancel

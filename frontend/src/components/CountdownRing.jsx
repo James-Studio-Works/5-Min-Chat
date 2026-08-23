@@ -29,7 +29,7 @@ export default function CountdownRing({
           cy={size / 2}
           r={radius}
           fill="none"
-          stroke={urgent ? "var(--ember)" : "var(--signal)"}
+          stroke={urgent ? "var(--danger)" : "var(--signal)"}
           strokeWidth={strokeWidth}
           strokeLinecap="round"
           strokeDasharray={circumference}

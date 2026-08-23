@@ -11,7 +11,7 @@ export default function Landing({
   return (
     <div className="screen landing">
       <div className="landing-inner">
-        <p className="eyebrow">5MINCHAT</p>
+        <p className="eyebrow">💬 5minchat</p>
 
         <div className="landing-hero-ring">
           <CountdownRing progress={0.62} size={96} strokeWidth={5}>
@@ -51,7 +51,7 @@ export default function Landing({
         </button>
 
         <button className="friends-link" onClick={onOpenFriends}>
-          MY FRIENDS →
+          My Friends →
         </button>
 
         {connectionError && (

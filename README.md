@@ -194,7 +194,7 @@ every restart or redeploy — so posts and images can't just be saved to a
 local file the way the in-memory chat state works. Both services below
 have free tiers with no credit card required for this scale:
 
-### 1. Set up Supabase (stores your posts)
+### 1. Set up Supabase (stores your posts, profiles, follows, and comments)
 
 1. Go to [supabase.com](https://supabase.com) → create a free account → New Project.
 2. Once it's created, go to the **SQL Editor** and run:
@@ -206,6 +206,30 @@ have free tiers with no credit card required for this scale:
      image_url text not null,
      caption text,
      likes text[] default '{}',
+     created_at timestamptz default now()
+   );
+
+   create table profiles (
+     persistent_id text primary key,
+     username text not null,
+     bio text,
+     avatar_url text,
+     updated_at timestamptz default now()
+   );
+
+   create table follows (
+     follower_id text not null,
+     following_id text not null,
+     created_at timestamptz default now(),
+     primary key (follower_id, following_id)
+   );
+
+   create table comments (
+     id uuid primary key default gen_random_uuid(),
+     post_id uuid not null references posts(id) on delete cascade,
+     persistent_id text not null,
+     username text not null,
+     text text not null,
      created_at timestamptz default now()
    );
    ```
@@ -243,6 +267,36 @@ there too. Image content itself is not moderated (no image classifier is
 wired up) — if you plan to accept public image uploads at real scale, that
 is a meaningful gap worth closing before wide launch, since unmoderated
 public image uploads are one of the highest-risk features in a social app.
+
+## New: Profiles, Follow, and Comments
+
+Three more pieces on top of the Feed, all using the same Supabase tables
+you already set up above (they need the `profiles`, `follows`, and
+`comments` tables from the SQL block, so make sure you ran the updated
+version if you set up Supabase before this update).
+
+**Profiles** — a fourth tab shows your own profile: avatar, bio, and a
+grid of your posts. Tapping anyone's username in the Feed opens their
+profile the same way. Editing your own profile (bio + avatar) reuses the
+same Cloudinary upload flow as posting a photo.
+
+**Follow** — a simple follow/unfollow button appears on other people's
+profiles. Follower/following counts are real counts from the database, not
+cached numbers, so they're always accurate but do cost a database query
+per profile view — fine at this scale, worth revisiting (e.g. caching
+counts on the profile row) if the app gets much bigger.
+
+**Comments** — each post in the Feed has a "Comments" toggle that expands
+an inline thread. Comments go through the same moderation as chat messages
+and post captions.
+
+**Same identity trade-off as before:** none of this uses real login, so
+"following" and "commenting as" a username isn't cryptographically tied to
+a real account — it's tied to a browser's local ID. This is fine for an
+early, low-stakes launch, but if the app grows and impersonation becomes a
+real complaint from users, migrating to Supabase Auth (since you're
+already on Supabase) is the natural next step and wouldn't require
+throwing away the database schema you already have.
 
 
 Per your own plan's "Non-Negotiable Rules," a static word list can't safely
