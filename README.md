@@ -306,3 +306,22 @@ can plug in OpenAI's Moderation API or Google's Perspective API once you're
 ready; it's a ~10 line change and documented inline. Reports currently log
 to the server console — wiring them to a real database is the natural next
 step once you're past the free-tier MVP stage.
+
+
+## Google Login (added)
+
+Google Login is added as a small optional frontend feature; the existing chat,
+feed, friends, and profile behavior is unchanged.
+
+1. Create a **Web application** OAuth client in Google Cloud Console.
+2. Add your deployed frontend origin (for example `https://your-site.vercel.app`)
+   to **Authorized JavaScript origins**.
+3. Copy the client ID into the frontend environment:
+   `VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com`
+4. For local development, also add `http://localhost:5173` as an authorized
+   JavaScript origin.
+5. Redeploy the frontend after setting the variable.
+
+The Google account is shown in the top-right after sign-in. The existing
+anonymous app identity remains unchanged; this addition does not alter the
+5-minute chat matching logic or backend.

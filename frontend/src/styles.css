@@ -760,3 +760,110 @@ h1 .accent { color: var(--signal); }
   border-radius: 6px;
   background: var(--dusk-2);
 }
+
+
+/* ---------- Google Login (added without changing existing app screens) ---------- */
+.google-login-wrap {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.google-login-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--dusk);
+  color: var(--paper);
+  padding: 10px 16px;
+  font: 700 14px var(--font-body);
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0,0,0,.08);
+}
+
+.google-login-btn:hover { transform: translateY(-1px); }
+.google-login-btn:disabled { opacity: .65; cursor: wait; }
+
+.google-g {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font: 800 15px Arial, sans-serif;
+  color: #4285f4;
+  background: #fff;
+}
+
+.google-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--dusk);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 8px 5px 5px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.08);
+}
+
+.google-user img,
+.google-user-fallback {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+}
+
+.google-user img { object-fit: cover; }
+
+.google-user-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--dusk-2);
+  color: var(--signal);
+  font-weight: 800;
+}
+
+.google-user-name {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.google-logout {
+  border: 0;
+  border-radius: 999px;
+  background: var(--dusk-2);
+  color: var(--paper);
+  padding: 7px 10px;
+  font: 700 12px var(--font-body);
+  cursor: pointer;
+}
+
+.google-login-error,
+.google-login-config {
+  max-width: 300px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--dusk);
+  color: var(--danger);
+  font-size: 11px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.06);
+}
+
+@media (max-width: 560px) {
+  .google-login-wrap { top: 10px; right: 10px; }
+  .google-user-name { display: none; }
+  .google-login-btn { padding: 9px 12px; }
+}

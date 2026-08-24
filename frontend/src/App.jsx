@@ -5,6 +5,7 @@ import TabBar from "./components/TabBar.jsx";
 import Profile from "./components/Profile.jsx";
 import ChatApp from "./ChatApp.jsx";
 import { getOrCreatePersistentId } from "./identity.js";
+import GoogleLogin from "./components/GoogleLogin.jsx";
 
 // App shell: four tabs. Chat keeps its own fully independent state
 // machine (ChatApp.jsx). Feed, NewPost, and Profile are simpler
@@ -33,6 +34,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      <GoogleLogin />
       <div className="app-content">
         {viewingProfileId ? (
           <Profile
