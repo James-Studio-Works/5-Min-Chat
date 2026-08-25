@@ -65,6 +65,29 @@ function requireSupabase(_req, res, next) {
   next();
 }
 
+// Verifies the Supabase-issued access token sent by a logged-in frontend
+// user (Authorization: Bearer <token>). This is what actually prevents
+// someone from spoofing another real account when posting, liking,
+// following, or commenting - the server derives the true identity from
+// the verified token rather than trusting whatever persistentId a request
+// body claims. Read endpoints (viewing the feed/profiles/comments) stay
+// open without this, matching how most social apps let anyone view public
+// content but require login to act on it.
+async function requireAuth(req, res, next) {
+  if (!supabase) return res.status(503).json({ error: "feed_not_configured" });
+
+  const authHeader = req.headers.authorization || "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  if (!token) return res.status(401).json({ error: "not_authenticated" });
+
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data?.user) return res.status(401).json({ error: "invalid_session" });
+
+  req.authUserId = data.user.id;
+  req.authUserEmail = data.user.email;
+  next();
+}
+
 app.get("/api/posts", requireSupabase, async (_req, res) => {
   const { data, error } = await supabase
     .from("posts")
@@ -76,12 +99,10 @@ app.get("/api/posts", requireSupabase, async (_req, res) => {
   res.json({ posts: data });
 });
 
-app.post("/api/posts", requireSupabase, async (req, res) => {
-  const { persistentId, username, imageUrl, caption } = req.body || {};
+app.post("/api/posts", requireAuth, async (req, res) => {
+  const { username, imageUrl, caption } = req.body || {};
+  const persistentId = req.authUserId;
 
-  if (typeof persistentId !== "string" || persistentId.length < 8) {
-    return res.status(400).json({ error: "invalid_persistent_id" });
-  }
   if (typeof imageUrl !== "string" || !imageUrl.startsWith("https://")) {
     return res.status(400).json({ error: "invalid_image_url" });
   }
@@ -118,13 +139,9 @@ app.post("/api/posts", requireSupabase, async (req, res) => {
   res.json({ post: data });
 });
 
-app.post("/api/posts/:id/like", requireSupabase, async (req, res) => {
+app.post("/api/posts/:id/like", requireAuth, async (req, res) => {
   const { id } = req.params;
-  const { persistentId } = req.body || {};
-
-  if (typeof persistentId !== "string" || persistentId.length < 8) {
-    return res.status(400).json({ error: "invalid_persistent_id" });
-  }
+  const persistentId = req.authUserId;
 
   const { data: existing, error: fetchError } = await supabase
     .from("posts")
@@ -195,12 +212,9 @@ app.get("/api/profiles/:persistentId", requireSupabase, async (req, res) => {
   });
 });
 
-app.post("/api/profiles/me", requireSupabase, async (req, res) => {
-  const { persistentId, username, bio, avatarUrl } = req.body || {};
-
-  if (typeof persistentId !== "string" || persistentId.length < 8) {
-    return res.status(400).json({ error: "invalid_persistent_id" });
-  }
+app.post("/api/profiles/me", requireAuth, async (req, res) => {
+  const { username, bio, avatarUrl } = req.body || {};
+  const persistentId = req.authUserId;
 
   if (typeof bio === "string" && bio.trim()) {
     const modResult = await moderateMessage(bio.trim());
@@ -231,12 +245,10 @@ app.post("/api/profiles/me", requireSupabase, async (req, res) => {
   res.json({ profile: data });
 });
 
-app.post("/api/follow", requireSupabase, async (req, res) => {
-  const { persistentId, targetPersistentId } = req.body || {};
+app.post("/api/follow", requireAuth, async (req, res) => {
+  const { targetPersistentId } = req.body || {};
+  const persistentId = req.authUserId;
 
-  if (typeof persistentId !== "string" || persistentId.length < 8) {
-    return res.status(400).json({ error: "invalid_persistent_id" });
-  }
   if (typeof targetPersistentId !== "string" || targetPersistentId.length < 8) {
     return res.status(400).json({ error: "invalid_target" });
   }
@@ -284,13 +296,11 @@ app.get("/api/posts/:id/comments", requireSupabase, async (req, res) => {
   res.json({ comments: data });
 });
 
-app.post("/api/posts/:id/comments", requireSupabase, async (req, res) => {
+app.post("/api/posts/:id/comments", requireAuth, async (req, res) => {
   const { id } = req.params;
-  const { persistentId, username, text } = req.body || {};
+  const { username, text } = req.body || {};
+  const persistentId = req.authUserId;
 
-  if (typeof persistentId !== "string" || persistentId.length < 8) {
-    return res.status(400).json({ error: "invalid_persistent_id" });
-  }
   if (typeof text !== "string" || !text.trim()) {
     return res.status(400).json({ error: "empty_comment" });
   }

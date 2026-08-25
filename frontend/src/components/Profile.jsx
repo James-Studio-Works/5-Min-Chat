@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import { getOrCreatePersistentId, getDisplayName } from "../identity.js";
 import { uploadImage } from "../cloudinary.js";
+import { supabase } from "../supabaseClient.js";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
 
-export default function Profile({ persistentId, onBack, onViewProfile }) {
-  const myPersistentId = getOrCreatePersistentId();
+export default function Profile({ persistentId, currentUser, accessToken, onBack, onViewProfile }) {
+  const myPersistentId = currentUser?.id;
   const isOwn = persistentId === myPersistentId;
 
   const [data, setData] = useState(null);
@@ -18,11 +18,15 @@ export default function Profile({ persistentId, onBack, onViewProfile }) {
   const [saving, setSaving] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
 
+  function defaultUsername() {
+    return currentUser?.user_metadata?.full_name || currentUser?.email?.split("@")[0] || "Anonymous";
+  }
+
   async function load() {
     setLoading(true);
     setError(null);
     try {
-      const url = `${BACKEND_URL}/api/profiles/${persistentId}?viewerId=${myPersistentId}`;
+      const url = `${BACKEND_URL}/api/profiles/${persistentId}?viewerId=${myPersistentId || ""}`;
       const res = await fetch(url);
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error || "failed");
@@ -61,10 +65,12 @@ export default function Profile({ persistentId, onBack, onViewProfile }) {
       }
       const res = await fetch(`${BACKEND_URL}/api/profiles/me`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({
-          persistentId: myPersistentId,
-          username: getDisplayName(),
+          username: defaultUsername(),
           bio: bioDraft,
           avatarUrl,
         }),
@@ -72,6 +78,9 @@ export default function Profile({ persistentId, onBack, onViewProfile }) {
       const json = await res.json();
       if (!res.ok) {
         if (json?.error === "moderated") throw new Error("That bio didn't meet the content guidelines.");
+        if (json?.error === "not_authenticated" || json?.error === "invalid_session") {
+          throw new Error("Your session expired - try logging in again.");
+        }
         throw new Error(json?.error || "save_failed");
       }
       setEditing(false);
@@ -90,8 +99,11 @@ export default function Profile({ persistentId, onBack, onViewProfile }) {
     try {
       const res = await fetch(`${BACKEND_URL}/api/follow`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ persistentId: myPersistentId, targetPersistentId: persistentId }),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ targetPersistentId: persistentId }),
       });
       const json = await res.json();
       if (res.ok) {
@@ -104,6 +116,10 @@ export default function Profile({ persistentId, onBack, onViewProfile }) {
     } finally {
       setFollowBusy(false);
     }
+  }
+
+  function handleSignOut() {
+    supabase?.auth.signOut();
   }
 
   if (loading) {
@@ -169,9 +185,14 @@ export default function Profile({ persistentId, onBack, onViewProfile }) {
       {!editing && profile.bio && <p className="profile-bio">{profile.bio}</p>}
 
       {isOwn && !editing && (
-        <button className="btn-secondary small" onClick={() => setEditing(true)}>
-          Edit Profile
-        </button>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button className="btn-secondary small" onClick={() => setEditing(true)}>
+            Edit Profile
+          </button>
+          <button className="btn-secondary small" onClick={handleSignOut}>
+            Sign Out
+          </button>
+        </div>
       )}
 
       {!isOwn && (

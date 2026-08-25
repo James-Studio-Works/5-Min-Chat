@@ -298,6 +298,58 @@ real complaint from users, migrating to Supabase Auth (since you're
 already on Supabase) is the natural next step and wouldn't require
 throwing away the database schema you already have.
 
+## New: Google + Email login (Feed, Post, Profile only)
+
+**The Chat tab is completely unaffected by this** — it stays fully
+anonymous, no login required, exactly as before. Login is required only
+to use the Feed, Post, and Profile tabs.
+
+This uses **Supabase Auth**, so it doesn't add a new external service —
+you're reusing the same Supabase project you already set up for the Feed.
+Once someone logs in, their real Supabase account ID replaces the
+anonymous browser ID for anything they do in Feed/Post/Profile (posts,
+likes, follows, comments) — which also closes a real gap the anonymous
+version had: the backend now cryptographically verifies who's making each
+request (via `requireAuth` in `server.js`), so nobody can post, like,
+follow, or comment while pretending to be someone else.
+
+### 1. Enable email login (works immediately, no extra setup)
+
+Email + password login works out of the box once Supabase Auth is
+enabled, which it is by default on every project. Nothing to configure
+here — just add the two frontend env vars in step 3 below and it works.
+
+### 2. Enable Google login
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) → create a project (or use an existing one).
+2. Go to **APIs & Services → OAuth consent screen** → set it up (External user type is fine for testing; you can keep it in "Testing" mode while you're the only user, or publish it later).
+3. Go to **APIs & Services → Credentials → Create Credentials → OAuth client ID**.
+   - Application type: **Web application**
+   - Under **Authorized redirect URIs**, add your Supabase callback URL. Find the exact URL in Supabase: **Authentication → Providers → Google** (it's shown there, looks like `https://your-project-ref.supabase.co/auth/v1/callback`).
+4. Copy the **Client ID** and **Client Secret** Google gives you.
+5. In Supabase: **Authentication → Providers → Google** → toggle it on → paste the Client ID and Client Secret → Save.
+6. In Supabase: **Authentication → URL Configuration** → make sure your production URL (`https://5minchat.online`) and `http://localhost:5173` (for local dev) are both listed under **Redirect URLs** — otherwise Google will log someone in but then fail to redirect them back to your app.
+
+### 3. Add the frontend env vars
+
+1. In Supabase: **Project Settings → API**. Copy the **Project URL** and the **Publishable key** (NOT the secret key — that one only belongs on the backend, which you already set up).
+2. On Vercel, add:
+   - `VITE_SUPABASE_URL` = your Project URL
+   - `VITE_SUPABASE_ANON_KEY` = your Publishable key
+3. Redeploy the frontend (Vite bakes env vars in at build time, so this step is required).
+
+### 4. Test it
+
+Open the Feed tab — if login isn't configured yet, you'll see a message
+saying so instead of a broken screen. Once configured, you should see a
+"Continue with Google" button and an email/password form. Try both.
+
+**One thing worth knowing about email volume:** Supabase's default email
+sending (for confirmation emails, etc.) is rate-limited on the free tier —
+fine for testing and early users, but if you get real signup volume,
+you'll want to configure a custom SMTP provider in Supabase's Auth
+settings eventually.
+
 
 Per your own plan's "Non-Negotiable Rules," a static word list can't safely
 catch hate speech, threats, or harassment — that needs a real classifier.
@@ -306,22 +358,3 @@ can plug in OpenAI's Moderation API or Google's Perspective API once you're
 ready; it's a ~10 line change and documented inline. Reports currently log
 to the server console — wiring them to a real database is the natural next
 step once you're past the free-tier MVP stage.
-
-
-## Google Login (added)
-
-Google Login is added as a small optional frontend feature; the existing chat,
-feed, friends, and profile behavior is unchanged.
-
-1. Create a **Web application** OAuth client in Google Cloud Console.
-2. Add your deployed frontend origin (for example `https://your-site.vercel.app`)
-   to **Authorized JavaScript origins**.
-3. Copy the client ID into the frontend environment:
-   `VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com`
-4. For local development, also add `http://localhost:5173` as an authorized
-   JavaScript origin.
-5. Redeploy the frontend after setting the variable.
-
-The Google account is shown in the top-right after sign-in. The existing
-anonymous app identity remains unchanged; this addition does not alter the
-5-minute chat matching logic or backend.

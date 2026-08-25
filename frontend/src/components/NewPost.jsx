@@ -1,10 +1,9 @@
 import { useState } from "react";
-import { getOrCreatePersistentId, getDisplayName } from "../identity.js";
 import { uploadImage } from "../cloudinary.js";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
 
-export default function NewPost({ onPosted }) {
+export default function NewPost({ onPosted, currentUser, accessToken }) {
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [caption, setCaption] = useState("");
@@ -39,10 +38,12 @@ export default function NewPost({ onPosted }) {
       setStatus("posting");
       const res = await fetch(`${BACKEND_URL}/api/posts`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({
-          persistentId: getOrCreatePersistentId(),
-          username: getDisplayName(),
+          username: currentUser?.user_metadata?.full_name || currentUser?.email?.split("@")[0] || "Anonymous",
           imageUrl,
           caption: caption.trim() || null,
         }),
@@ -51,6 +52,9 @@ export default function NewPost({ onPosted }) {
       if (!res.ok) {
         if (data?.error === "moderated") {
           throw new Error("Your caption didn't meet the content guidelines - try rewording it.");
+        }
+        if (data?.error === "not_authenticated" || data?.error === "invalid_session") {
+          throw new Error("Your session expired - try logging in again.");
         }
         throw new Error(data?.error || "post_failed");
       }
@@ -65,9 +69,7 @@ export default function NewPost({ onPosted }) {
       setError(
         e.message === "image_upload_not_configured"
           ? "Image uploads aren't set up yet - see README for Cloudinary setup."
-          : e.message.includes("content guidelines")
-          ? e.message
-          : "Couldn't publish that post - try again."
+          : e.message
       );
     }
   }

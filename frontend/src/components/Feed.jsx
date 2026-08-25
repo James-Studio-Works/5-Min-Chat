@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { getOrCreatePersistentId, getDisplayName } from "../identity.js";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
 
@@ -13,7 +12,7 @@ function timeAgo(iso) {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-function CommentSection({ postId }) {
+function CommentSection({ postId, currentUser, accessToken }) {
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState("");
@@ -45,10 +44,12 @@ function CommentSection({ postId }) {
     try {
       const res = await fetch(`${BACKEND_URL}/api/posts/${postId}/comments`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({
-          persistentId: getOrCreatePersistentId(),
-          username: getDisplayName(),
+          username: currentUser?.user_metadata?.full_name || currentUser?.email?.split("@")[0] || "Anonymous",
           text,
         }),
       });
@@ -57,6 +58,8 @@ function CommentSection({ postId }) {
         throw new Error(
           data?.error === "moderated"
             ? "That comment didn't meet the content guidelines."
+            : data?.error === "not_authenticated" || data?.error === "invalid_session"
+            ? "Your session expired - try logging in again."
             : "Couldn't post that comment."
         );
       }
@@ -99,12 +102,12 @@ function CommentSection({ postId }) {
   );
 }
 
-export default function Feed({ refreshSignal, onViewProfile }) {
+export default function Feed({ refreshSignal, onViewProfile, currentUser, accessToken }) {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expandedPostId, setExpandedPostId] = useState(null);
-  const persistentId = getOrCreatePersistentId();
+  const myId = currentUser?.id;
 
   async function loadFeed() {
     setLoading(true);
@@ -133,18 +136,20 @@ export default function Feed({ refreshSignal, onViewProfile }) {
     setPosts((prev) =>
       prev.map((p) => {
         if (p.id !== postId) return p;
-        const already = (p.likes || []).includes(persistentId);
+        const already = (p.likes || []).includes(myId);
         const likes = already
-          ? p.likes.filter((id) => id !== persistentId)
-          : [...(p.likes || []), persistentId];
+          ? p.likes.filter((id) => id !== myId)
+          : [...(p.likes || []), myId];
         return { ...p, likes };
       })
     );
     try {
       await fetch(`${BACKEND_URL}/api/posts/${postId}/like`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ persistentId }),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
       });
     } catch {
       // optimistic UI already reflects intent; ignore transient failures
@@ -185,7 +190,7 @@ export default function Feed({ refreshSignal, onViewProfile }) {
 
       <div className="post-list">
         {posts.map((post) => {
-          const liked = (post.likes || []).includes(persistentId);
+          const liked = (post.likes || []).includes(myId);
           const isExpanded = expandedPostId === post.id;
           return (
             <div key={post.id} className="post-card">
@@ -214,7 +219,9 @@ export default function Feed({ refreshSignal, onViewProfile }) {
                   {isExpanded ? "Hide comments" : "Comments"}
                 </button>
               </div>
-              {isExpanded && <CommentSection postId={post.id} />}
+              {isExpanded && (
+                <CommentSection postId={post.id} currentUser={currentUser} accessToken={accessToken} />
+              )}
             </div>
           );
         })}
