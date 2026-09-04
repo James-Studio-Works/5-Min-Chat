@@ -3,20 +3,28 @@ import Feed from "./components/Feed.jsx";
 import NewPost from "./components/NewPost.jsx";
 import TabBar from "./components/TabBar.jsx";
 import Profile from "./components/Profile.jsx";
+import Settings from "./components/Settings.jsx";
 import Login from "./components/Login.jsx";
 import ChatApp from "./ChatApp.jsx";
 import { supabase, isAuthConfigured } from "./supabaseClient.js";
+import { getInitialTheme, applyTheme } from "./theme.js";
 
-// App shell: four tabs. Chat is fully independent and never requires
-// login (ChatApp.jsx, unchanged, anonymous by design). Feed, NewPost, and
-// Profile require a real Supabase Auth session - if there isn't one, they
-// show the Login screen instead.
 export default function App() {
   const [activeTab, setActiveTab] = useState("feed");
   const [feedRefreshSignal, setFeedRefreshSignal] = useState(0);
   const [viewingProfileId, setViewingProfileId] = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
+
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+
+  const [theme, setTheme] = useState(getInitialTheme);
+
+  // Apply the theme to <html data-theme="..."> as soon as the app mounts,
+  // and again any time it changes, so CSS variables in styles.css pick it up.
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
 
   useEffect(() => {
     if (!isAuthConfigured) {
@@ -31,6 +39,10 @@ export default function App() {
       setSession(newSession);
     });
     return () => listener.subscription.unsubscribe();
+  }, []);
+
+  const handleThemeChange = useCallback((next) => {
+    setTheme(next);
   }, []);
 
   const handlePosted = useCallback(() => {
@@ -49,6 +61,28 @@ export default function App() {
   const needsLogin = activeTab !== "chat" && (!isAuthConfigured || (!authLoading && !session));
   const user = session?.user || null;
   const accessToken = session?.access_token || null;
+
+  if (showSettings) {
+    return (
+      <div className="app-shell">
+        <div className="app-content">
+          <Settings
+            currentUser={user}
+            theme={theme}
+            onThemeChange={handleThemeChange}
+            onBack={() => setShowSettings(false)}
+          />
+        </div>
+        <TabBar
+          activeTab={activeTab}
+          onChange={(tab) => {
+            setShowSettings(false);
+            setActiveTab(tab);
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="app-shell">
@@ -88,6 +122,7 @@ export default function App() {
                 currentUser={user}
                 accessToken={accessToken}
                 onViewProfile={handleViewProfile}
+                onOpenSettings={() => setShowSettings(true)}
               />
             )}
           </>

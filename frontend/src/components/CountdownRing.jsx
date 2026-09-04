@@ -1,9 +1,5 @@
-// The signature visual motif of the app: a ring that depletes as time
-// runs out. Used for the real chat countdown, and echoed (idle/looping)
-// on the landing page and waiting screen so the whole product shares one
-// visual language tied to its actual mechanic, not just decoration.
 export default function CountdownRing({
-  progress, // 0 to 1, 1 = full time remaining, 0 = expired
+  progress,
   size = 120,
   strokeWidth = 6,
   urgent = false,

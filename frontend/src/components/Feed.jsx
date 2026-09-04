@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { HeartIcon } from "../icons/Icons.jsx";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
 
@@ -178,7 +179,7 @@ export default function Feed({ refreshSignal, onViewProfile, currentUser, access
   return (
     <div className="feed-screen">
       <div className="feed-header">
-        <h2>Feed</h2>
+        <h2>Home</h2>
         <button className="link-btn" onClick={loadFeed}>
           Refresh
         </button>
@@ -210,7 +211,7 @@ export default function Feed({ refreshSignal, onViewProfile, currentUser, access
                   className={`like-btn ${liked ? "liked" : ""}`}
                   onClick={() => toggleLike(post.id)}
                 >
-                  {liked ? "♥" : "♡"} {(post.likes || []).length}
+                  <HeartIcon size={19} filled={liked} /> {(post.likes || []).length}
                 </button>
                 <button
                   className="link-btn"

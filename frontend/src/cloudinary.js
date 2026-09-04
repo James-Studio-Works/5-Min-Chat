@@ -1,6 +1,3 @@
-// Shared image-upload helper - used by both NewPost (post photos) and
-// Profile (avatar photos) so there's one place that knows how to talk to
-// Cloudinary's unsigned upload endpoint.
 const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
 const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
 

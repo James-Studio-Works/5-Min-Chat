@@ -20,10 +20,6 @@ function bumpMomentsCount() {
   return next;
 }
 
-// view: "landing" | "waiting" | "chat" | "end" | "friends"
-// This is the original 5minchat app, unchanged in behavior, just extracted
-// into its own component so it can be mounted as one tab inside the wider
-// app shell (App.jsx) instead of taking over the whole page.
 export default function ChatApp() {
   const [view, setView] = useState("landing");
   const [yourName, setYourName] = useState(null);

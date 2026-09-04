@@ -21,7 +21,6 @@ function formatTime(ms) {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-
 function downloadTextFile(filename, text) {
   const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -57,8 +56,6 @@ export default function ChatRoom({
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
 
-  // Server-authoritative countdown - purely cosmetic re-render every 250ms,
-  // the backend is the one that actually closes the room at endTime.
   useEffect(() => {
     const interval = setInterval(() => {
       setRemainingMs(Math.max(0, endTime - Date.now()));

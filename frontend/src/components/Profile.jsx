@@ -1,10 +1,21 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { uploadImage } from "../cloudinary.js";
-import { supabase } from "../supabaseClient.js";
+import { ArrowLeftIcon, SettingsIcon } from "../icons/Icons.jsx";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
 
-export default function Profile({ persistentId, currentUser, accessToken, onBack, onViewProfile }) {
+const HANDLE_ERROR_MESSAGES = {
+  too_short: "At least 3 characters.",
+  too_long: "20 characters max.",
+  invalid_characters: "Only lowercase letters, numbers, and _ allowed.",
+  must_start_with_letter: "Must start with a letter.",
+  profanity: "That username isn't allowed.",
+  impersonation: "That username isn't allowed.",
+  taken: "That username is already taken.",
+  invalid: "Enter a username.",
+};
+
+export default function Profile({ persistentId, currentUser, accessToken, onBack, onViewProfile, onOpenSettings }) {
   const myPersistentId = currentUser?.id;
   const isOwn = persistentId === myPersistentId;
 
@@ -13,10 +24,14 @@ export default function Profile({ persistentId, currentUser, accessToken, onBack
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(false);
   const [bioDraft, setBioDraft] = useState("");
+  const [handleDraft, setHandleDraft] = useState("");
+  const [handleStatus, setHandleStatus] = useState(null); // { available: bool, reason: string|null } | "checking" | null
   const [avatarFile, setAvatarFile] = useState(null);
   const [avatarPreview, setAvatarPreview] = useState(null);
   const [saving, setSaving] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
+
+  const handleCheckTimeout = useRef(null);
 
   function defaultUsername() {
     return currentUser?.user_metadata?.full_name || currentUser?.email?.split("@")[0] || "Anonymous";
@@ -32,6 +47,7 @@ export default function Profile({ persistentId, currentUser, accessToken, onBack
       if (!res.ok) throw new Error(json?.error || "failed");
       setData(json);
       setBioDraft(json.profile.bio || "");
+      setHandleDraft(json.profile.handle || "");
     } catch (e) {
       setError(
         e.message === "feed_not_configured"
@@ -55,6 +71,30 @@ export default function Profile({ persistentId, currentUser, accessToken, onBack
     setAvatarPreview(URL.createObjectURL(file));
   }
 
+  function handleHandleChange(value) {
+    const cleaned = value.toLowerCase().replace(/[^a-z0-9_]/g, "");
+    setHandleDraft(cleaned);
+    setHandleStatus(null);
+    clearTimeout(handleCheckTimeout.current);
+
+    if (!cleaned) return;
+    if (cleaned === data?.profile?.handle) return; // unchanged, no need to check
+
+    handleCheckTimeout.current = setTimeout(async () => {
+      setHandleStatus("checking");
+      try {
+        const res = await fetch(
+          `${BACKEND_URL}/api/handles/check?handle=${encodeURIComponent(cleaned)}`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+        const json = await res.json();
+        setHandleStatus(json);
+      } catch {
+        setHandleStatus(null);
+      }
+    }, 400);
+  }
+
   async function handleSaveProfile() {
     setSaving(true);
     setError(null);
@@ -71,6 +111,7 @@ export default function Profile({ persistentId, currentUser, accessToken, onBack
         },
         body: JSON.stringify({
           username: defaultUsername(),
+          handle: handleDraft || undefined,
           bio: bioDraft,
           avatarUrl,
         }),
@@ -78,6 +119,10 @@ export default function Profile({ persistentId, currentUser, accessToken, onBack
       const json = await res.json();
       if (!res.ok) {
         if (json?.error === "moderated") throw new Error("That bio didn't meet the content guidelines.");
+        if (json?.error === "handle_taken") throw new Error("That username is already taken.");
+        if (json?.error === "invalid_handle") {
+          throw new Error(HANDLE_ERROR_MESSAGES[json.reason] || "That username isn't valid.");
+        }
         if (json?.error === "not_authenticated" || json?.error === "invalid_session") {
           throw new Error("Your session expired - try logging in again.");
         }
@@ -118,18 +163,16 @@ export default function Profile({ persistentId, currentUser, accessToken, onBack
     }
   }
 
-  function handleSignOut() {
-    supabase?.auth.signOut();
-  }
-
   if (loading) {
     return (
       <div className="profile-screen">
-        {onBack && (
-          <button className="link-btn" onClick={onBack}>
-            ← Back
-          </button>
-        )}
+        <div className="profile-topbar">
+          {onBack && (
+            <button className="icon-btn" onClick={onBack} aria-label="Back">
+              <ArrowLeftIcon size={22} />
+            </button>
+          )}
+        </div>
         <p className="chat-hint">Loading profile…</p>
       </div>
     );
@@ -138,25 +181,39 @@ export default function Profile({ persistentId, currentUser, accessToken, onBack
   if (error && !data) {
     return (
       <div className="profile-screen">
-        {onBack && (
-          <button className="link-btn" onClick={onBack}>
-            ← Back
-          </button>
-        )}
+        <div className="profile-topbar">
+          {onBack && (
+            <button className="icon-btn" onClick={onBack} aria-label="Back">
+              <ArrowLeftIcon size={22} />
+            </button>
+          )}
+        </div>
         <p className="error-text">{error}</p>
       </div>
     );
   }
 
   const { profile, posts, followerCount, followingCount, isFollowing } = data;
+  const canSave =
+    !saving &&
+    (!handleDraft || handleDraft === profile.handle || handleStatus?.available === true);
 
   return (
     <div className="profile-screen">
-      {onBack && (
-        <button className="link-btn" onClick={onBack}>
-          ← Back
-        </button>
-      )}
+      <div className="profile-topbar">
+        {onBack ? (
+          <button className="icon-btn" onClick={onBack} aria-label="Back">
+            <ArrowLeftIcon size={22} />
+          </button>
+        ) : (
+          <span />
+        )}
+        {isOwn && (
+          <button className="icon-btn" onClick={onOpenSettings} aria-label="Settings">
+            <SettingsIcon size={22} />
+          </button>
+        )}
+      </div>
 
       <div className="profile-header">
         <div className="profile-avatar">
@@ -168,6 +225,7 @@ export default function Profile({ persistentId, currentUser, accessToken, onBack
         </div>
         <div className="profile-meta">
           <h2>{profile.username}</h2>
+          {profile.handle && <p className="profile-handle">@{profile.handle}</p>}
           <div className="profile-stats">
             <span>
               <strong>{posts.length}</strong> posts
@@ -185,13 +243,15 @@ export default function Profile({ persistentId, currentUser, accessToken, onBack
       {!editing && profile.bio && <p className="profile-bio">{profile.bio}</p>}
 
       {isOwn && !editing && (
-        <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <button className="btn-secondary small" onClick={() => setEditing(true)}>
             Edit Profile
           </button>
-          <button className="btn-secondary small" onClick={handleSignOut}>
-            Sign Out
-          </button>
+          {!profile.handle && (
+            <button className="btn-primary small" onClick={() => setEditing(true)}>
+              Choose a username
+            </button>
+          )}
         </div>
       )}
 
@@ -215,6 +275,27 @@ export default function Profile({ persistentId, currentUser, accessToken, onBack
             )}
             <input type="file" accept="image/*" onChange={handleAvatarChange} hidden />
           </label>
+
+          <div>
+            <input
+              type="text"
+              value={handleDraft}
+              onChange={(e) => handleHandleChange(e.target.value)}
+              placeholder="username (e.g. james_b07)"
+              maxLength={20}
+            />
+            {handleStatus === "checking" && (
+              <p className="handle-hint">Checking…</p>
+            )}
+            {handleStatus && handleStatus !== "checking" && handleDraft !== profile.handle && (
+              <p className={`handle-hint ${handleStatus.available ? "ok" : "bad"}`}>
+                {handleStatus.available
+                  ? `@${handleDraft} is available`
+                  : HANDLE_ERROR_MESSAGES[handleStatus.reason] || "Not available"}
+              </p>
+            )}
+          </div>
+
           <textarea
             value={bioDraft}
             onChange={(e) => setBioDraft(e.target.value)}
@@ -227,7 +308,7 @@ export default function Profile({ persistentId, currentUser, accessToken, onBack
             <button className="btn-secondary small" onClick={() => setEditing(false)}>
               Cancel
             </button>
-            <button className="btn-primary small" onClick={handleSaveProfile} disabled={saving}>
+            <button className="btn-primary small" onClick={handleSaveProfile} disabled={!canSave}>
               {saving ? "Saving…" : "Save"}
             </button>
           </div>

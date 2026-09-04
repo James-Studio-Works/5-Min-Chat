@@ -1,4 +1,5 @@
 import CountdownRing from "./CountdownRing.jsx";
+import { ChatIcon, ChevronRightIcon } from "../icons/Icons.jsx";
 
 export default function Landing({
   onStart,
@@ -11,7 +12,9 @@ export default function Landing({
   return (
     <div className="screen landing">
       <div className="landing-inner">
-        <p className="eyebrow">💬 5minchat</p>
+        <p className="eyebrow">
+          <ChatIcon size={20} /> 5minchat
+        </p>
 
         <div className="landing-hero-ring">
           <CountdownRing progress={0.62} size={96} strokeWidth={5}>
@@ -51,7 +54,7 @@ export default function Landing({
         </button>
 
         <button className="friends-link" onClick={onOpenFriends}>
-          My Friends →
+          My Friends <ChevronRightIcon size={14} />
         </button>
 
         {connectionError && (

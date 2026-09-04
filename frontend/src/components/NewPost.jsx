@@ -7,7 +7,7 @@ export default function NewPost({ onPosted, currentUser, accessToken }) {
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [caption, setCaption] = useState("");
-  const [status, setStatus] = useState("idle"); // idle | uploading | posting | error
+  const [status, setStatus] = useState("idle");
   const [error, setError] = useState(null);
 
   function handleFileChange(e) {

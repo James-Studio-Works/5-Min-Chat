@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { socket } from "../socket";
+import { ArrowLeftIcon } from "../icons/Icons.jsx";
 
 export default function Friends({ onBack, onStartFriendChat }) {
   const [friends, setFriends] = useState([]);
@@ -18,7 +19,7 @@ export default function Friends({ onBack, onStartFriendChat }) {
 
   useEffect(() => {
     refresh();
-    const interval = setInterval(refresh, 5000); // light polling for online status
+    const interval = setInterval(refresh, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -39,8 +40,8 @@ export default function Friends({ onBack, onStartFriendChat }) {
   return (
     <div className="screen friends-screen">
       <div className="friends-inner">
-        <button className="link-btn" onClick={onBack}>
-          ← Back
+        <button className="icon-btn" onClick={onBack} aria-label="Back">
+          <ArrowLeftIcon size={22} />
         </button>
         <h2>Your Friends</h2>
         <p className="lede small">

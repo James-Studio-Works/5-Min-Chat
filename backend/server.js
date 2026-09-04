@@ -5,28 +5,25 @@ const cors = require("cors");
 const { Server } = require("socket.io");
 const { randomUUID } = require("crypto");
 const { createClient } = require("@supabase/supabase-js");
-const { moderateMessage, moderateUsername } = require("./moderation");
+const { moderateMessage, moderateUsername, moderateHandle } = require("./moderation");
 
 // ---------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------
 const PORT = process.env.PORT || 4000;
 
-// Accepts a comma separated list, e.g.
-// FRONTEND_URL=https://5minchat.online,https://www.5minchat.online,https://5minchat.vercel.app
 const ALLOWED_ORIGINS = (process.env.FRONTEND_URL || "*")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
 
-const SESSION_DURATION_MS = 5 * 60 * 1000; // 5 minutes, server-authoritative
+const SESSION_DURATION_MS = 5 * 60 * 1000;
 const MAX_MESSAGE_LENGTH = 500;
-const MESSAGE_RATE_WINDOW_MS = 10_000; // 10s
-const MESSAGE_RATE_MAX = 8; // max messages per window
-const REMATCH_COOLDOWN_MS = 2 * 60 * 1000; // don't re-pair the same 2 people for 2 min
-const MAX_QUEUE_WAIT_LOG_MS = 60_000;
-const FRIEND_REQUEST_COOLDOWN_MS = 60 * 1000; // 1 per minute per requester, anti-spam
-const MAX_FRIENDS = 200; // sanity ceiling per person
+const MESSAGE_RATE_WINDOW_MS = 10_000;
+const MESSAGE_RATE_MAX = 8;
+const REMATCH_COOLDOWN_MS = 2 * 60 * 1000;
+const FRIEND_REQUEST_COOLDOWN_MS = 60 * 1000;
+const MAX_FRIENDS = 200;
 
 // ---------------------------------------------------------------------
 // App setup
@@ -35,17 +32,16 @@ const app = express();
 
 const corsOptions = {
   origin: ALLOWED_ORIGINS.includes("*") ? true : ALLOWED_ORIGINS,
-  methods: ["GET", "POST"],
+  methods: ["GET", "POST", "DELETE"],
 };
 app.use(cors(corsOptions));
 app.use(express.json());
 
 // ---------------------------------------------------------------------
-// Feed feature (posts + likes). Backed by Supabase (Postgres) since
-// Render's free-tier disk is wiped on every restart/redeploy - anything
-// written to local disk (like a SQLite file) would not survive. If these
-// env vars aren't set, the feed endpoints return 503 rather than crashing
-// the whole server - the chat feature keeps working either way.
+// Feed feature (posts + likes + profiles + follow + comments). Backed by
+// Supabase (Postgres) since Render's free-tier disk is wiped on every
+// restart/redeploy. If these env vars aren't set, the feed endpoints
+// return 503 rather than crashing the server - chat keeps working either way.
 // ---------------------------------------------------------------------
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -65,14 +61,10 @@ function requireSupabase(_req, res, next) {
   next();
 }
 
-// Verifies the Supabase-issued access token sent by a logged-in frontend
-// user (Authorization: Bearer <token>). This is what actually prevents
-// someone from spoofing another real account when posting, liking,
-// following, or commenting - the server derives the true identity from
-// the verified token rather than trusting whatever persistentId a request
-// body claims. Read endpoints (viewing the feed/profiles/comments) stay
-// open without this, matching how most social apps let anyone view public
-// content but require login to act on it.
+// Verifies the Supabase session JWT sent by the frontend and attaches the
+// real, cryptographically-verified user id to the request. Write routes
+// use req.authUser.id instead of trusting any client-supplied id, so
+// nobody can post/like/follow/comment while pretending to be someone else.
 async function requireAuth(req, res, next) {
   if (!supabase) return res.status(503).json({ error: "feed_not_configured" });
 
@@ -83,8 +75,7 @@ async function requireAuth(req, res, next) {
   const { data, error } = await supabase.auth.getUser(token);
   if (error || !data?.user) return res.status(401).json({ error: "invalid_session" });
 
-  req.authUserId = data.user.id;
-  req.authUserEmail = data.user.email;
+  req.authUser = { id: data.user.id, email: data.user.email };
   next();
 }
 
@@ -99,9 +90,9 @@ app.get("/api/posts", requireSupabase, async (_req, res) => {
   res.json({ posts: data });
 });
 
-app.post("/api/posts", requireAuth, async (req, res) => {
+app.post("/api/posts", requireSupabase, requireAuth, async (req, res) => {
   const { username, imageUrl, caption } = req.body || {};
-  const persistentId = req.authUserId;
+  const persistentId = req.authUser.id;
 
   if (typeof imageUrl !== "string" || !imageUrl.startsWith("https://")) {
     return res.status(400).json({ error: "invalid_image_url" });
@@ -117,9 +108,6 @@ app.post("/api/posts", requireAuth, async (req, res) => {
     }
   }
 
-  // Keep a lightweight profile row in sync so a profile page exists even
-  // for someone who's never explicitly "set up" one - the first post
-  // creates it. Best-effort: a failure here doesn't block the post itself.
   await supabase
     .from("profiles")
     .upsert({ persistent_id: persistentId, username: safeUsername }, { onConflict: "persistent_id" });
@@ -139,9 +127,9 @@ app.post("/api/posts", requireAuth, async (req, res) => {
   res.json({ post: data });
 });
 
-app.post("/api/posts/:id/like", requireAuth, async (req, res) => {
+app.post("/api/posts/:id/like", requireSupabase, requireAuth, async (req, res) => {
   const { id } = req.params;
-  const persistentId = req.authUserId;
+  const persistentId = req.authUser.id;
 
   const { data: existing, error: fetchError } = await supabase
     .from("posts")
@@ -202,6 +190,7 @@ app.get("/api/profiles/:persistentId", requireSupabase, async (req, res) => {
     profile: {
       persistentId,
       username: profile?.username || posts?.[0]?.username || "Anonymous",
+      handle: profile?.handle || null,
       bio: profile?.bio || "",
       avatarUrl: profile?.avatar_url || null,
     },
@@ -212,9 +201,30 @@ app.get("/api/profiles/:persistentId", requireSupabase, async (req, res) => {
   });
 });
 
-app.post("/api/profiles/me", requireAuth, async (req, res) => {
-  const { username, bio, avatarUrl } = req.body || {};
-  const persistentId = req.authUserId;
+// Live availability check while someone is typing a handle. Excludes
+// their own current handle so re-saving your own unchanged handle doesn't
+// falsely show as "taken."
+app.get("/api/handles/check", requireSupabase, requireAuth, async (req, res) => {
+  const raw = typeof req.query.handle === "string" ? req.query.handle : "";
+  const result = moderateHandle(raw);
+
+  if (!result.allowed) {
+    return res.json({ available: false, reason: result.reason });
+  }
+
+  const { data: existing } = await supabase
+    .from("profiles")
+    .select("persistent_id")
+    .eq("handle", result.handle)
+    .maybeSingle();
+
+  const takenBySomeoneElse = existing && existing.persistent_id !== req.authUser.id;
+  res.json({ available: !takenBySomeoneElse, reason: takenBySomeoneElse ? "taken" : null });
+});
+
+app.post("/api/profiles/me", requireSupabase, requireAuth, async (req, res) => {
+  const { username, handle, bio, avatarUrl } = req.body || {};
+  const persistentId = req.authUser.id;
 
   if (typeof bio === "string" && bio.trim()) {
     const modResult = await moderateMessage(bio.trim());
@@ -223,31 +233,55 @@ app.post("/api/profiles/me", requireAuth, async (req, res) => {
     }
   }
 
+  let safeHandle;
+  if (typeof handle === "string" && handle.trim()) {
+    const handleResult = moderateHandle(handle);
+    if (!handleResult.allowed) {
+      return res.status(400).json({ error: "invalid_handle", reason: handleResult.reason });
+    }
+    const { data: existing } = await supabase
+      .from("profiles")
+      .select("persistent_id")
+      .eq("handle", handleResult.handle)
+      .maybeSingle();
+    if (existing && existing.persistent_id !== persistentId) {
+      return res.status(409).json({ error: "handle_taken" });
+    }
+    safeHandle = handleResult.handle;
+  }
+
   const safeUsername =
     typeof username === "string" && username.trim() ? username.trim().slice(0, 20) : "Anonymous";
 
+  const upsertRow = {
+    persistent_id: persistentId,
+    username: safeUsername,
+    bio: typeof bio === "string" ? bio.trim().slice(0, 160) : null,
+    avatar_url: typeof avatarUrl === "string" ? avatarUrl : null,
+    updated_at: new Date().toISOString(),
+  };
+  if (safeHandle) upsertRow.handle = safeHandle;
+
   const { data, error } = await supabase
     .from("profiles")
-    .upsert(
-      {
-        persistent_id: persistentId,
-        username: safeUsername,
-        bio: typeof bio === "string" ? bio.trim().slice(0, 160) : null,
-        avatar_url: typeof avatarUrl === "string" ? avatarUrl : null,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "persistent_id" }
-    )
+    .upsert(upsertRow, { onConflict: "persistent_id" })
     .select()
     .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) {
+    // Postgres unique-violation code, as a safety net against a race
+    // condition between the availability check above and this write.
+    if (error.code === "23505") {
+      return res.status(409).json({ error: "handle_taken" });
+    }
+    return res.status(500).json({ error: error.message });
+  }
   res.json({ profile: data });
 });
 
-app.post("/api/follow", requireAuth, async (req, res) => {
+app.post("/api/follow", requireSupabase, requireAuth, async (req, res) => {
   const { targetPersistentId } = req.body || {};
-  const persistentId = req.authUserId;
+  const persistentId = req.authUser.id;
 
   if (typeof targetPersistentId !== "string" || targetPersistentId.length < 8) {
     return res.status(400).json({ error: "invalid_target" });
@@ -296,10 +330,10 @@ app.get("/api/posts/:id/comments", requireSupabase, async (req, res) => {
   res.json({ comments: data });
 });
 
-app.post("/api/posts/:id/comments", requireAuth, async (req, res) => {
+app.post("/api/posts/:id/comments", requireSupabase, requireAuth, async (req, res) => {
   const { id } = req.params;
   const { username, text } = req.body || {};
-  const persistentId = req.authUserId;
+  const persistentId = req.authUser.id;
 
   if (typeof text !== "string" || !text.trim()) {
     return res.status(400).json({ error: "empty_comment" });
@@ -331,12 +365,33 @@ app.post("/api/posts/:id/comments", requireAuth, async (req, res) => {
   res.json({ comment: data });
 });
 
+// ---------------------------------------------------------------------
+// Account deletion - removes the person's data (posts, profile, follows,
+// comments) and then deletes the actual Supabase auth account. Deleting
+// the auth account requires the service-role client, which this backend
+// already holds (never exposed to the frontend).
+// ---------------------------------------------------------------------
+app.delete("/api/account", requireSupabase, requireAuth, async (req, res) => {
+  const persistentId = req.authUser.id;
+
+  await Promise.all([
+    supabase.from("posts").delete().eq("persistent_id", persistentId),
+    supabase.from("profiles").delete().eq("persistent_id", persistentId),
+    supabase.from("comments").delete().eq("persistent_id", persistentId),
+    supabase.from("follows").delete().eq("follower_id", persistentId),
+    supabase.from("follows").delete().eq("following_id", persistentId),
+  ]);
+
+  const { error } = await supabase.auth.admin.deleteUser(persistentId);
+  if (error) return res.status(500).json({ error: error.message });
+
+  res.json({ ok: true });
+});
+
 app.get("/", (_req, res) => {
   res.json({ status: "ok", service: "5minchat-backend" });
 });
 
-// Simple health/status endpoint - handy for confirming Render deploy is live
-// and for an uptime pinger (see README re: free-tier cold starts).
 app.get("/health", (_req, res) => {
   res.json({
     status: "ok",
@@ -352,43 +407,24 @@ const io = new Server(server, {
 });
 
 // ---------------------------------------------------------------------
-// In-memory state (fine for a single free-tier instance / MVP scope).
-// Nothing here is written to a database or log file - it lives only in
-// process memory and disappears when a room closes or the process
-// restarts, matching the "no permanent chat history" product rule.
+// In-memory chat state (unaffected by any of the auth/feed work above -
+// chat stays fully anonymous, no login required).
 // ---------------------------------------------------------------------
-let waitingQueue = []; // [{ socketId, joinedAt }]
-const rooms = new Map(); // roomId -> room object
-const socketToRoom = new Map(); // socketId -> roomId
-const anonNames = new Map(); // socketId -> display name
-const messageTimestamps = new Map(); // socketId -> [timestamps]
-const recentPairs = new Map(); // "idA|idB" -> timestamp of last match
-const blockedBy = new Map(); // socketId -> Set of socketIds they've blocked
+let waitingQueue = [];
+const rooms = new Map();
+const socketToRoom = new Map();
+const anonNames = new Map();
+const messageTimestamps = new Map();
+const recentPairs = new Map();
+const blockedBy = new Map();
 
-// ---------------------------------------------------------------------
-// Friends feature state.
-// A "persistentId" is a random UUID the client generates and stores in
-// its own localStorage - NOT an account, no password, no email. It just
-// lets the *same browser* be recognized across visits so a friendship
-// (which by definition needs to survive beyond one 5-minute session) has
-// something to attach to. Losing localStorage (clearing site data, new
-// device/browser) means losing your friend list - that's an intentional
-// trade-off to avoid building a full account system.
-//
-// NOTE: like the rest of this MVP, this is in-memory only - it resets if
-// the server restarts. Fine for launch; move to a real database (with a
-// migration plan) before relying on friend lists sticking around.
-// ---------------------------------------------------------------------
-const friendsOf = new Map(); // persistentId -> Set of persistentIds
-const usernameOf = new Map(); // persistentId -> last-known display name
-const persistentToSocket = new Map(); // persistentId -> socketId (only while online)
-const socketToPersistent = new Map(); // socketId -> persistentId
-const lastFriendRequestAt = new Map(); // persistentId -> timestamp (anti-spam)
-const pendingFriendRequestKey = new Map(); // roomId -> requester persistentId (one request per room)
+const friendsOf = new Map();
+const usernameOf = new Map();
+const persistentToSocket = new Map();
+const socketToPersistent = new Map();
+const lastFriendRequestAt = new Map();
+const pendingFriendRequestKey = new Map();
 
-// ---------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------
 const ADJECTIVES = [
   "Blue", "Crimson", "Silent", "Wandering", "Curious", "Gentle", "Bright",
   "Hidden", "Lucky", "Quiet", "Bold", "Amber", "Cosmic", "Lone", "Swift",
@@ -417,9 +453,7 @@ function wasRecentlyPaired(idA, idB) {
 }
 
 function isBlockedPair(idA, idB) {
-  return (
-    blockedBy.get(idA)?.has(idB) || blockedBy.get(idB)?.has(idA)
-  );
+  return blockedBy.get(idA)?.has(idB) || blockedBy.get(idB)?.has(idA);
 }
 
 function removeFromQueue(socketId) {
@@ -436,13 +470,7 @@ function checkRateLimit(socketId) {
   return stamps.length <= MESSAGE_RATE_MAX;
 }
 
-/**
- * Attempts to pair up waiting users. Called whenever someone joins the
- * queue or the queue changes. Skips pairs that were recently matched or
- * have blocked each other.
- */
 function tryMatch() {
-  // Simple O(n^2) scan - the queue is expected to stay small; fine for MVP.
   for (let i = 0; i < waitingQueue.length; i++) {
     for (let j = i + 1; j < waitingQueue.length; j++) {
       const a = waitingQueue[i];
@@ -451,19 +479,17 @@ function tryMatch() {
       const socketA = io.sockets.sockets.get(a.socketId);
       const socketB = io.sockets.sockets.get(b.socketId);
 
-      // Drop stale entries for sockets that disconnected without cleanup.
       if (!socketA) { waitingQueue.splice(i, 1); i--; continue; }
       if (!socketB) { waitingQueue.splice(j, 1); j--; continue; }
 
       if (isBlockedPair(a.socketId, b.socketId)) continue;
       if (wasRecentlyPaired(a.socketId, b.socketId)) continue;
 
-      // Match found - remove both from queue and create a room.
       waitingQueue = waitingQueue.filter(
         (e) => e.socketId !== a.socketId && e.socketId !== b.socketId
       );
       createRoom(a.socketId, b.socketId);
-      return tryMatch(); // keep matching remaining queue
+      return tryMatch();
     }
   }
 }
@@ -492,19 +518,12 @@ function createRoom(idA, idB) {
     if (sock) sock.join(roomId);
   });
 
-  const payload = {
-    roomId,
-    startTime,
-    endTime,
-    durationMs: SESSION_DURATION_MS,
-  };
+  const payload = { roomId, startTime, endTime, durationMs: SESSION_DURATION_MS };
 
   io.to(idA).emit("match_found", {
     ...payload,
     yourName: anonNames.get(idA),
     partnerName: anonNames.get(idB),
-    // Ephemeral, random-per-connection id - used client-side only as a
-    // handle for block/report. Not a persistent identity, IP, or account id.
     partnerSocketId: idB,
   });
   io.to(idB).emit("match_found", {
@@ -514,10 +533,8 @@ function createRoom(idA, idB) {
     partnerSocketId: idA,
   });
 
-  // Reset the one-friend-request-per-conversation guard for this room.
   pendingFriendRequestKey.delete(roomId);
 
-  // Server-authoritative expiry - the browser's countdown is cosmetic only.
   room.timer = setTimeout(() => expireRoom(roomId, "timeout"), SESSION_DURATION_MS);
 }
 
@@ -531,7 +548,7 @@ function expireRoom(roomId, reason) {
   io.to(roomId).emit("session_expired", { roomId, reason });
 
   room.users.forEach((id) => socketToRoom.delete(id));
-  rooms.delete(roomId); // ephemeral - transcript never touched a database
+  rooms.delete(roomId);
 }
 
 function leaveRoomEarly(socketId, reason) {
@@ -552,18 +569,11 @@ function leaveRoomEarly(socketId, reason) {
   return partnerId;
 }
 
-// ---------------------------------------------------------------------
-// Socket.IO events
-// ---------------------------------------------------------------------
 io.on("connection", (socket) => {
   const anonName = generateAnonName();
   anonNames.set(socket.id, anonName);
   socket.emit("connected", { anonName, socketId: socket.id });
 
-  // ---------------- Identity (persistentId) + custom username ----------
-  // The client sends this right after connecting. persistentId is a
-  // client-generated UUID stored in localStorage - it's how "friends"
-  // persist across sessions without a real account system.
   socket.on("identify", ({ persistentId, username } = {}, ack) => {
     if (typeof persistentId !== "string" || persistentId.length < 8 || persistentId.length > 100) {
       return ack?.({ ok: false, error: "invalid_persistent_id" });
@@ -590,7 +600,6 @@ io.on("connection", (socket) => {
   });
 
   socket.on("find_match", () => {
-    // Guard against duplicate queue entries / already in a room.
     if (socketToRoom.has(socket.id)) return;
     if (waitingQueue.some((e) => e.socketId === socket.id)) return;
 
@@ -615,7 +624,7 @@ io.on("connection", (socket) => {
       return ack?.({ ok: false, error: "session_expired" });
     }
     if (!room.users.includes(socket.id)) {
-      return ack?.({ ok: false, error: "not_a_member" }); // authorization check
+      return ack?.({ ok: false, error: "not_a_member" });
     }
 
     const text = typeof data?.text === "string" ? data.text.trim() : "";
@@ -642,8 +651,6 @@ io.on("connection", (socket) => {
       sentAt: Date.now(),
     });
     ack?.({ ok: true, id: messageId });
-    // Note: message content is relayed only - never written to a log,
-    // database, or file, matching the "no message content in logs" rule.
   });
 
   socket.on("typing", (isTyping) => {
@@ -654,9 +661,7 @@ io.on("connection", (socket) => {
 
   socket.on("leave_chat", () => {
     const partnerId = leaveRoomEarly(socket.id, "left");
-    if (partnerId) {
-      io.to(partnerId).emit("partner_left");
-    }
+    if (partnerId) io.to(partnerId).emit("partner_left");
   });
 
   socket.on("block", ({ targetSocketId } = {}) => {
@@ -669,19 +674,12 @@ io.on("connection", (socket) => {
   });
 
   socket.on("report", ({ targetSocketId, category, reason } = {}) => {
-    // MVP: log to server console only (operator visibility), never to a
-    // transcript store. Wire this to a real Report table (see plan
-    // section 9 "Report") once you add a database.
     console.log(
       `[report] from=${socket.id} target=${targetSocketId || "unknown"} category=${category || "other"} reasonProvided=${!!reason}`
     );
     socket.emit("report_received");
   });
 
-  // ---------------- Friends: mutual opt-in only ----------------------
-  // Either person can send a request; the other person must explicitly
-  // accept before anything is saved. One request per conversation to
-  // discourage spamming requests at strangers who've said no.
   socket.on("send_friend_request", (_data, ack) => {
     const roomId = socketToRoom.get(socket.id);
     const room = roomId && rooms.get(roomId);
@@ -707,9 +705,7 @@ io.on("connection", (socket) => {
     pendingFriendRequestKey.set(roomId, myPersistentId);
     lastFriendRequestAt.set(myPersistentId, Date.now());
 
-    io.to(partnerId).emit("friend_request_received", {
-      fromName: anonNames.get(socket.id),
-    });
+    io.to(partnerId).emit("friend_request_received", { fromName: anonNames.get(socket.id) });
     ack?.({ ok: true });
   });
 
@@ -758,10 +754,6 @@ io.on("connection", (socket) => {
     ack?.({ ok: true, friends });
   });
 
-  // Direct-connect with a specific friend (skips the random queue). Still
-  // goes through the normal 5-minute room/timer/moderation pipeline - this
-  // is not a persistent unmoderated DM channel, just a way to re-match a
-  // specific person for another timed session.
   socket.on("start_friend_chat", ({ friendPersistentId } = {}, ack) => {
     const myPersistentId = socketToPersistent.get(socket.id);
     if (!myPersistentId) return ack?.({ ok: false, error: "not_identified" });
@@ -802,9 +794,6 @@ io.on("connection", (socket) => {
   });
 });
 
-// Periodic safety-net sweep: closes any room whose endTime has passed but
-// whose setTimeout somehow didn't fire (e.g. process was briefly under
-// heavy load). Cheap insurance on top of the per-room timer.
 setInterval(() => {
   const now = Date.now();
   for (const [roomId, room] of rooms) {
@@ -812,7 +801,6 @@ setInterval(() => {
       expireRoom(roomId, "timeout");
     }
   }
-  // Drop queue entries with dead sockets.
   waitingQueue = waitingQueue.filter((e) => io.sockets.sockets.has(e.socketId));
 }, 15_000);
 
