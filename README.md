@@ -75,6 +75,20 @@ instead of the full block above:
 alter table profiles add column handle text unique;
 ```
 
+**New for the expanded Settings feature** (private accounts + blocking) -
+run this too if your tables predate it:
+
+```sql
+alter table profiles add column is_private boolean default false;
+
+create table blocks (
+  blocker_id text not null,
+  blocked_id text not null,
+  created_at timestamptz default now(),
+  primary key (blocker_id, blocked_id)
+);
+```
+
 ## Backend env vars (Render)
 
 | Variable | Value |
@@ -130,8 +144,18 @@ enabled (which it is by default).
   race-condition-safe fallback check on save).
 - **Follow / Comments / Likes** - straightforward, all moderated through
   the same profanity/personal-info filter used in chat.
-- **Settings** - reachable via the gear icon on your own profile. Light/
-  dark theme toggle (persisted), account info, sign out.
+- **Settings** - reachable via the gear icon on your own profile.
+  - Light/dark theme toggle (persisted)
+  - **Privacy**: private account toggle (in Edit Profile) hides your posts
+    from everyone except approved followers; a Blocked Accounts list lets
+    you review and unblock anyone you've blocked
+  - **Block/Unblock**: available on anyone else's profile. Blocking
+    removes any existing follow relationship both ways and hides each
+    other's posts/profile content
+  - **Delete Account**: permanently removes your posts, profile, follows,
+    blocks, and login - requires typing "DELETE" to confirm since it's
+    irreversible. The anonymous chat feature is completely unaffected
+    since it was never tied to an account in the first place.
 
 ## Known trade-offs worth knowing about
 

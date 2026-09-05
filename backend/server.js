@@ -79,15 +79,45 @@ async function requireAuth(req, res, next) {
   next();
 }
 
-app.get("/api/posts", requireSupabase, async (_req, res) => {
-  const { data, error } = await supabase
+app.get("/api/posts", requireSupabase, async (req, res) => {
+  const viewerId = typeof req.query.viewerId === "string" ? req.query.viewerId : null;
+
+  const { data: posts, error } = await supabase
     .from("posts")
     .select("*")
     .order("created_at", { ascending: false })
     .limit(50);
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json({ posts: data });
+
+  // Hide posts from private accounts unless the viewer follows that
+  // account or it's their own post. Two extra lookups, only run when
+  // there's actually private-account content in the result set.
+  const authorIds = [...new Set((posts || []).map((p) => p.persistent_id))];
+  if (authorIds.length === 0) return res.json({ posts: [] });
+
+  const { data: privateProfiles } = await supabase
+    .from("profiles")
+    .select("persistent_id")
+    .in("persistent_id", authorIds)
+    .eq("is_private", true);
+
+  const privateIds = new Set((privateProfiles || []).map((p) => p.persistent_id));
+  if (privateIds.size === 0) return res.json({ posts });
+
+  let followingIds = new Set();
+  if (viewerId) {
+    const { data: followRows } = await supabase
+      .from("follows")
+      .select("following_id")
+      .eq("follower_id", viewerId);
+    followingIds = new Set((followRows || []).map((f) => f.following_id));
+  }
+
+  const visible = posts.filter(
+    (p) => !privateIds.has(p.persistent_id) || p.persistent_id === viewerId || followingIds.has(p.persistent_id)
+  );
+  res.json({ posts: visible });
 });
 
 app.post("/api/posts", requireSupabase, requireAuth, async (req, res) => {
@@ -162,43 +192,133 @@ app.post("/api/posts/:id/like", requireSupabase, requireAuth, async (req, res) =
 app.get("/api/profiles/:persistentId", requireSupabase, async (req, res) => {
   const { persistentId } = req.params;
   const viewerPersistentId = typeof req.query.viewerId === "string" ? req.query.viewerId : null;
+  const isSelf = viewerPersistentId === persistentId;
 
-  const [{ data: profile }, { data: posts }, followerCountRes, followingCountRes] = await Promise.all([
+  const [{ data: profile }, followerCountRes, followingCountRes] = await Promise.all([
     supabase.from("profiles").select("*").eq("persistent_id", persistentId).maybeSingle(),
-    supabase
-      .from("posts")
-      .select("*")
-      .eq("persistent_id", persistentId)
-      .order("created_at", { ascending: false })
-      .limit(50),
     supabase.from("follows").select("*", { count: "exact", head: true }).eq("following_id", persistentId),
     supabase.from("follows").select("*", { count: "exact", head: true }).eq("follower_id", persistentId),
   ]);
 
   let isFollowing = false;
-  if (viewerPersistentId && viewerPersistentId !== persistentId) {
-    const { data: followRow } = await supabase
-      .from("follows")
-      .select("*")
-      .eq("follower_id", viewerPersistentId)
-      .eq("following_id", persistentId)
-      .maybeSingle();
+  let isBlocked = false; // true if either side has blocked the other
+  if (viewerPersistentId && !isSelf) {
+    const [{ data: followRow }, { data: blockRow }] = await Promise.all([
+      supabase
+        .from("follows")
+        .select("*")
+        .eq("follower_id", viewerPersistentId)
+        .eq("following_id", persistentId)
+        .maybeSingle(),
+      supabase
+        .from("blocks")
+        .select("*")
+        .or(
+          `and(blocker_id.eq.${viewerPersistentId},blocked_id.eq.${persistentId}),and(blocker_id.eq.${persistentId},blocked_id.eq.${viewerPersistentId})`
+        )
+        .maybeSingle(),
+    ]);
     isFollowing = !!followRow;
+    isBlocked = !!blockRow;
+  }
+
+  const isPrivate = !!profile?.is_private;
+  const canSeePosts = isSelf || !isPrivate || isFollowing;
+
+  let posts = [];
+  if (canSeePosts && !isBlocked) {
+    const { data } = await supabase
+      .from("posts")
+      .select("*")
+      .eq("persistent_id", persistentId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    posts = data || [];
   }
 
   res.json({
     profile: {
       persistentId,
-      username: profile?.username || posts?.[0]?.username || "Anonymous",
+      username: profile?.username || "Anonymous",
       handle: profile?.handle || null,
       bio: profile?.bio || "",
       avatarUrl: profile?.avatar_url || null,
+      isPrivate,
     },
-    posts: posts || [],
+    posts,
+    postsHidden: !canSeePosts,
+    isBlocked,
     followerCount: followerCountRes.count || 0,
     followingCount: followingCountRes.count || 0,
     isFollowing,
   });
+});
+
+// ---------------------------------------------------------------------
+// Block / Unblock
+// ---------------------------------------------------------------------
+app.post("/api/block", requireSupabase, requireAuth, async (req, res) => {
+  const { targetPersistentId } = req.body || {};
+  const persistentId = req.authUser.id;
+
+  if (typeof targetPersistentId !== "string" || targetPersistentId.length < 8) {
+    return res.status(400).json({ error: "invalid_target" });
+  }
+  if (persistentId === targetPersistentId) {
+    return res.status(400).json({ error: "cannot_block_self" });
+  }
+
+  const { data: existing } = await supabase
+    .from("blocks")
+    .select("*")
+    .eq("blocker_id", persistentId)
+    .eq("blocked_id", targetPersistentId)
+    .maybeSingle();
+
+  if (existing) {
+    const { error } = await supabase
+      .from("blocks")
+      .delete()
+      .eq("blocker_id", persistentId)
+      .eq("blocked_id", targetPersistentId);
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ blocked: false });
+  }
+
+  const { error: insertError } = await supabase
+    .from("blocks")
+    .insert({ blocker_id: persistentId, blocked_id: targetPersistentId });
+  if (insertError) return res.status(500).json({ error: insertError.message });
+
+  // Blocking severs any existing follow relationship in both directions -
+  // matches how most social apps behave.
+  await supabase
+    .from("follows")
+    .delete()
+    .or(
+      `and(follower_id.eq.${persistentId},following_id.eq.${targetPersistentId}),and(follower_id.eq.${targetPersistentId},following_id.eq.${persistentId})`
+    );
+
+  res.json({ blocked: true });
+});
+
+app.get("/api/blocks", requireSupabase, requireAuth, async (req, res) => {
+  const { data: blockRows, error } = await supabase
+    .from("blocks")
+    .select("blocked_id")
+    .eq("blocker_id", req.authUser.id);
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  const blockedIds = (blockRows || []).map((b) => b.blocked_id);
+  if (blockedIds.length === 0) return res.json({ blocked: [] });
+
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("persistent_id, username, handle, avatar_url")
+    .in("persistent_id", blockedIds);
+
+  res.json({ blocked: profiles || [] });
 });
 
 // Live availability check while someone is typing a handle. Excludes
@@ -223,7 +343,7 @@ app.get("/api/handles/check", requireSupabase, requireAuth, async (req, res) => 
 });
 
 app.post("/api/profiles/me", requireSupabase, requireAuth, async (req, res) => {
-  const { username, handle, bio, avatarUrl } = req.body || {};
+  const { username, handle, bio, avatarUrl, isPrivate } = req.body || {};
   const persistentId = req.authUser.id;
 
   if (typeof bio === "string" && bio.trim()) {
@@ -261,6 +381,7 @@ app.post("/api/profiles/me", requireSupabase, requireAuth, async (req, res) => {
     updated_at: new Date().toISOString(),
   };
   if (safeHandle) upsertRow.handle = safeHandle;
+  if (typeof isPrivate === "boolean") upsertRow.is_private = isPrivate;
 
   const { data, error } = await supabase
     .from("profiles")
@@ -380,6 +501,8 @@ app.delete("/api/account", requireSupabase, requireAuth, async (req, res) => {
     supabase.from("comments").delete().eq("persistent_id", persistentId),
     supabase.from("follows").delete().eq("follower_id", persistentId),
     supabase.from("follows").delete().eq("following_id", persistentId),
+    supabase.from("blocks").delete().eq("blocker_id", persistentId),
+    supabase.from("blocks").delete().eq("blocked_id", persistentId),
   ]);
 
   const { error } = await supabase.auth.admin.deleteUser(persistentId);

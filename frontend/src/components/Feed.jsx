@@ -114,7 +114,7 @@ export default function Feed({ refreshSignal, onViewProfile, currentUser, access
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/posts`);
+      const res = await fetch(`${BACKEND_URL}/api/posts?viewerId=${myId || ""}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "failed");
       setPosts(data.posts || []);

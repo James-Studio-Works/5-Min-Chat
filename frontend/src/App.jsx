@@ -68,6 +68,7 @@ export default function App() {
         <div className="app-content">
           <Settings
             currentUser={user}
+            accessToken={accessToken}
             theme={theme}
             onThemeChange={handleThemeChange}
             onBack={() => setShowSettings(false)}

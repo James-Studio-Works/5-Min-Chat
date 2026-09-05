@@ -2,14 +2,15 @@
 // so the app doesn't rely on emoji, which render inconsistently across
 // platforms and read as less "finished." Every icon takes the same props
 // so they're interchangeable wherever an icon is needed.
-function base(props) {
+function base({ size, strokeWidth, ...rest }) {
   return {
-    width: props.size || 24,
-    height: props.size || 24,
+    ...rest,
+    width: size || 24,
+    height: size || 24,
     viewBox: "0 0 24 24",
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: props.strokeWidth || 2,
+    strokeWidth: strokeWidth || 2,
     strokeLinecap: "round",
     strokeLinejoin: "round",
   };
@@ -111,6 +112,15 @@ export function ChevronRightIcon(props) {
   return (
     <svg {...base(props)}>
       <path d="M9 6l6 6-6 6" />
+    </svg>
+  );
+}
+
+export function LockIcon(props) {
+  return (
+    <svg {...base(props)}>
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
     </svg>
   );
 }
