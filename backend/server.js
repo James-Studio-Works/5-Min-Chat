@@ -255,6 +255,53 @@ app.get("/api/profiles/:persistentId", requireSupabase, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------
+// User search - powers the search bar on the Feed/home page. Matches
+// against username or @handle, case-insensitive, partial match.
+// ---------------------------------------------------------------------
+app.get("/api/profiles/search", requireSupabase, async (req, res) => {
+  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  const viewerId = typeof req.query.viewerId === "string" ? req.query.viewerId : null;
+
+  if (q.length < 1) return res.json({ profiles: [] });
+  if (q.length > 40) return res.status(400).json({ error: "query_too_long" });
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("persistent_id, username, handle, avatar_url, is_private")
+    .or(`username.ilike.%${q}%,handle.ilike.%${q}%`)
+    .limit(20);
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  let results = data || [];
+
+  // Hide accounts that have blocked the viewer, or that the viewer has
+  // blocked, from search results - same courtesy as everywhere else.
+  if (viewerId && results.length > 0) {
+    const { data: blockRows } = await supabase
+      .from("blocks")
+      .select("blocker_id, blocked_id")
+      .or(`blocker_id.eq.${viewerId},blocked_id.eq.${viewerId}`);
+
+    const blockedPairIds = new Set();
+    (blockRows || []).forEach((b) => {
+      blockedPairIds.add(b.blocker_id === viewerId ? b.blocked_id : b.blocker_id);
+    });
+    results = results.filter((p) => !blockedPairIds.has(p.persistent_id));
+  }
+
+  res.json({
+    profiles: results.map((p) => ({
+      persistentId: p.persistent_id,
+      username: p.username,
+      handle: p.handle,
+      avatarUrl: p.avatar_url,
+      isPrivate: !!p.is_private,
+    })),
+  });
+});
+
+// ---------------------------------------------------------------------
 // Block / Unblock
 // ---------------------------------------------------------------------
 app.post("/api/block", requireSupabase, requireAuth, async (req, res) => {

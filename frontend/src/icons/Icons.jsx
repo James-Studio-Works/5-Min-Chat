@@ -125,6 +125,23 @@ export function LockIcon(props) {
   );
 }
 
+export function SearchIcon(props) {
+  return (
+    <svg {...base(props)}>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </svg>
+  );
+}
+
+export function XIcon(props) {
+  return (
+    <svg {...base(props)}>
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  );
+}
+
 export function TrashIcon(props) {
   return (
     <svg {...base(props)}>

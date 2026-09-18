@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { HeartIcon } from "../icons/Icons.jsx";
+import { useEffect, useRef, useState } from "react";
+import { HeartIcon, SearchIcon, XIcon } from "../icons/Icons.jsx";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
 
@@ -110,6 +110,60 @@ export default function Feed({ refreshSignal, onViewProfile, currentUser, access
   const [expandedPostId, setExpandedPostId] = useState(null);
   const myId = currentUser?.id;
 
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+  const searchDebounce = useRef(null);
+  const searchBoxRef = useRef(null);
+
+  async function runSearch(q) {
+    setSearching(true);
+    try {
+      const res = await fetch(
+        `${BACKEND_URL}/api/profiles/search?q=${encodeURIComponent(q)}&viewerId=${myId || ""}`
+      );
+      const data = await res.json();
+      setSearchResults(res.ok ? data.profiles || [] : []);
+    } catch {
+      setSearchResults([]);
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  function handleSearchChange(value) {
+    setSearchQuery(value);
+    setShowResults(true);
+    clearTimeout(searchDebounce.current);
+
+    const trimmed = value.trim();
+    if (!trimmed) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+    searchDebounce.current = setTimeout(() => runSearch(trimmed), 300);
+  }
+
+  function clearSearch() {
+    setSearchQuery("");
+    setSearchResults([]);
+    setShowResults(false);
+  }
+
+  // Close the results dropdown on an outside click, so it doesn't linger
+  // over the feed once someone's done searching.
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (searchBoxRef.current && !searchBoxRef.current.contains(e.target)) {
+        setShowResults(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   async function loadFeed() {
     setLoading(true);
     setError(null);
@@ -183,6 +237,56 @@ export default function Feed({ refreshSignal, onViewProfile, currentUser, access
         <button className="link-btn" onClick={loadFeed}>
           Refresh
         </button>
+      </div>
+
+      <div className="search-box" ref={searchBoxRef}>
+        <div className="search-input-wrap">
+          <SearchIcon size={17} />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            onFocus={() => setShowResults(true)}
+            placeholder="Search people by name or @username"
+          />
+          {searchQuery && (
+            <button className="search-clear-btn" onClick={clearSearch} aria-label="Clear search">
+              <XIcon size={15} />
+            </button>
+          )}
+        </div>
+
+        {showResults && searchQuery.trim() && (
+          <div className="search-results">
+            {searching && <p className="chat-hint small">Searching…</p>}
+            {!searching && searchResults.length === 0 && (
+              <p className="chat-hint small">No one found.</p>
+            )}
+            {!searching &&
+              searchResults.map((p) => (
+                <button
+                  key={p.persistentId}
+                  className="search-result-row"
+                  onClick={() => {
+                    onViewProfile?.(p.persistentId);
+                    clearSearch();
+                  }}
+                >
+                  <span className="search-result-avatar">
+                    {p.avatarUrl ? (
+                      <img src={p.avatarUrl} alt="" />
+                    ) : (
+                      <span>{p.username[0]?.toUpperCase()}</span>
+                    )}
+                  </span>
+                  <span className="search-result-text">
+                    <span className="search-result-username">{p.username}</span>
+                    {p.handle && <span className="search-result-handle">@{p.handle}</span>}
+                  </span>
+                </button>
+              ))}
+          </div>
+        )}
       </div>
 
       {posts.length === 0 && (

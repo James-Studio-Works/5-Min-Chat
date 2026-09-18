@@ -565,6 +565,102 @@ h1 .accent { color: var(--signal); }
   margin-bottom: 18px;
 }
 .feed-header h2 { font-family: var(--font-display); margin: 0; font-size: 24px; font-weight: 800; }
+
+/* ---------- Search box (on Feed) ---------- */
+.search-box {
+  position: relative;
+  margin-bottom: 20px;
+}
+.search-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--dusk);
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  padding: 10px 16px;
+  color: var(--ash);
+  transition: border-color 0.15s ease;
+}
+.search-input-wrap:focus-within { border-color: var(--signal); }
+.search-input-wrap input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--paper);
+  font-size: 14px;
+  font-family: var(--font-body);
+}
+.search-input-wrap input::placeholder { color: var(--ash); }
+.search-clear-btn {
+  background: none;
+  border: none;
+  color: var(--ash);
+  cursor: pointer;
+  display: flex;
+  padding: 2px;
+}
+.search-clear-btn:hover { color: var(--paper); }
+.search-results {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: var(--dusk);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  max-height: 320px;
+  overflow-y: auto;
+  z-index: 5;
+  padding: 6px;
+}
+.search-result-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 10px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+.search-result-row:hover { background: var(--dusk-2); }
+.search-result-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--signal);
+  color: var(--on-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 14px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.search-result-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.search-result-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.search-result-username {
+  font-size: 13.5px;
+  font-weight: 700;
+  font-family: var(--font-display);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-result-handle { font-size: 12px; color: var(--ash); font-weight: 500; }
+
 .post-list {
   display: flex;
   flex-direction: column;
