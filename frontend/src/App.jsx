@@ -10,7 +10,7 @@ import { supabase, isAuthConfigured } from "./supabaseClient.js";
 import { getInitialTheme, applyTheme } from "./theme.js";
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState("feed");
+  const [activeTab, setActiveTab] = useState("chat");
   const [feedRefreshSignal, setFeedRefreshSignal] = useState(0);
   const [viewingProfileId, setViewingProfileId] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
