@@ -154,10 +154,7 @@ export default function Profile({ persistentId, currentUser, accessToken, onBack
         },
         body: JSON.stringify({ targetPersistentId: persistentId }),
       });
-      const json = await res.json();
-      if (res.ok) {
-        await load();
-      }
+      if (res.ok) await load();
     } finally {
       setFollowBusy(false);
     }
@@ -165,7 +162,7 @@ export default function Profile({ persistentId, currentUser, accessToken, onBack
 
   async function handleBlockToggle() {
     const confirmMsg = data.isBlocked
-      ? null // unblock never needs confirmation
+      ? null
       : `Block ${data.profile.username}? They won't be able to see your profile or posts, and you won't see theirs.`;
     if (confirmMsg && !window.confirm(confirmMsg)) return;
 
@@ -268,7 +265,7 @@ export default function Profile({ persistentId, currentUser, accessToken, onBack
       {!editing && profile.bio && <p className="profile-bio">{profile.bio}</p>}
 
       {isOwn && !editing && (
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <div className="profile-actions">
           <button className="btn-secondary small" onClick={() => setEditing(true)}>
             Edit Profile
           </button>
@@ -281,7 +278,7 @@ export default function Profile({ persistentId, currentUser, accessToken, onBack
       )}
 
       {!isOwn && (
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <div className="profile-actions">
           <button
             className={isFollowing ? "btn-secondary small" : "btn-primary small"}
             onClick={handleFollowToggle}
