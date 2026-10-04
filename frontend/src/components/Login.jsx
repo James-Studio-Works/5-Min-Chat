@@ -65,19 +65,30 @@ export default function Login() {
           stays fully anonymous either way.
         </p>
 
-        <button className="btn-secondary google-btn" onClick={handleGoogle}>
+        <button className="btn-secondary google-btn" onClick={handleGoogle} style={{ width: "100%", justifyContent: "center" }}>
           <GoogleIcon size={18} /> Continue with Google
         </button>
 
         <div className="login-divider">or</div>
 
-        <form className="login-form" onSubmit={handleEmailSubmit}>
+        <form
+          className="login-form"
+          onSubmit={handleEmailSubmit}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+            width: "100%",
+            textAlign: "left",
+          }}
+        >
           <input
             type="email"
             placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
+            style={{ width: "100%", boxSizing: "border-box" }}
           />
           <input
             type="password"
@@ -86,10 +97,16 @@ export default function Login() {
             onChange={(e) => setPassword(e.target.value)}
             minLength={6}
             required
+            style={{ width: "100%", boxSizing: "border-box" }}
           />
           {error && <p className="error-text">{error}</p>}
           {info && <p className="lede small">{info}</p>}
-          <button type="submit" className="btn-primary" disabled={busy}>
+          <button
+            type="submit"
+            className="btn-primary"
+            disabled={busy}
+            style={{ width: "100%" }}
+          >
             {busy ? "Please wait…" : mode === "signup" ? "Sign Up" : "Sign In"}
           </button>
         </form>
