@@ -1,5 +1,13 @@
-import { useEffect, useRef, useState } from "react";
-import { HeartIcon, SearchIcon, XIcon } from "../icons/Icons.jsx";
+import { useEffect, useRef, useState, useCallback } from "react";
+import {
+  HeartIcon,
+  DislikeIcon,
+  CommentIcon,
+  ShareIcon,
+  RemixIcon,
+  SearchIcon,
+  XIcon,
+} from "../icons/Icons.jsx";
 import { isVideoUrl } from "../cloudinary.js";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
@@ -10,6 +18,7 @@ const MEDIA_BOX = {
   aspectRatio: "4 / 5",
   background: "var(--dusk-2, #1a1e28)",
   overflow: "hidden",
+  cursor: "pointer",
 };
 
 const MEDIA_FILL = {
@@ -29,7 +38,17 @@ function timeAgo(iso) {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-function PostMedia({ url }) {
+function timeAgoShort(iso) {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h`;
+  return `${Math.floor(hrs / 24)}d`;
+}
+
+function PostMedia({ url, onOpen }) {
   const videoRef = useRef(null);
   const containerRef = useRef(null);
   const video = isVideoUrl(url);
@@ -54,13 +73,20 @@ function PostMedia({ url }) {
 
   if (video) {
     return (
-      <div className="post-media" ref={containerRef} style={MEDIA_BOX}>
+      <div
+        className="post-media"
+        ref={containerRef}
+        style={MEDIA_BOX}
+        onClick={onOpen}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => e.key === "Enter" && onOpen?.()}
+      >
         <video
           ref={videoRef}
           className="post-image post-video"
           style={MEDIA_FILL}
           src={url}
-          controls
           playsInline
           muted
           loop
@@ -72,7 +98,14 @@ function PostMedia({ url }) {
   }
 
   return (
-    <div className="post-media" style={MEDIA_BOX}>
+    <div
+      className="post-media"
+      style={MEDIA_BOX}
+      onClick={onOpen}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => e.key === "Enter" && onOpen?.()}
+    >
       <img className="post-image" style={MEDIA_FILL} src={url} alt="" loading="lazy" />
     </div>
   );
@@ -171,12 +204,335 @@ function CommentSection({ postId, currentUser, accessToken }) {
   );
 }
 
+function CommentPanel({ postId, currentUser, accessToken, onClose }) {
+  const [comments, setComments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [draft, setDraft] = useState("");
+  const [error, setError] = useState(null);
+  const [posting, setPosting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/posts/${postId}/comments`);
+        const data = await res.json();
+        if (!cancelled && res.ok) setComments(data.comments || []);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [postId]);
+
+  async function submit(e) {
+    e.preventDefault();
+    const text = draft.trim();
+    if (!text) return;
+    setPosting(true);
+    setError(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/posts/${postId}/comments`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          username:
+            currentUser?.user_metadata?.full_name ||
+            currentUser?.email?.split("@")[0] ||
+            "Anonymous",
+          text,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(
+          data?.error === "moderated"
+            ? "That comment didn't meet the content guidelines."
+            : data?.error === "not_authenticated" || data?.error === "invalid_session"
+            ? "Your session expired - try logging in again."
+            : "Couldn't post that comment."
+        );
+      }
+      setComments((prev) => [...prev, data.comment]);
+      setDraft("");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setPosting(false);
+    }
+  }
+
+  return (
+    <div className="vf-comment-panel" onClick={(e) => e.stopPropagation()}>
+      <div className="vf-comment-header">
+        <span>Comments</span>
+        <button className="vf-comment-close" onClick={onClose} aria-label="Close comments">
+          <XIcon size={20} />
+        </button>
+      </div>
+      <div className="vf-comment-list">
+        {loading && <p className="chat-hint small">Loading…</p>}
+        {!loading && comments.length === 0 && (
+          <p className="chat-hint small">No comments yet. Be the first.</p>
+        )}
+        {comments.map((c) => (
+          <div key={c.id} className="vf-comment-row">
+            <strong>{c.username}</strong> {c.text}
+          </div>
+        ))}
+      </div>
+      {error && <p className="error-text small">{error}</p>}
+      <form className="vf-comment-form" onSubmit={submit}>
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Add a comment…"
+          maxLength={280}
+        />
+        <button type="submit" className="link-btn" disabled={posting || !draft.trim()}>
+          Post
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function FullPageViewer({
+  posts,
+  startIndex,
+  myId,
+  accessToken,
+  currentUser,
+  onClose,
+  onLike,
+  onDislike,
+  onViewProfile,
+  dislikes,
+}) {
+  const [activeIndex, setActiveIndex] = useState(startIndex);
+  const [showComments, setShowComments] = useState(false);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
+  useEffect(() => {
+    const root = containerRef.current;
+    if (!root || posts.length === 0) return;
+
+    const wraps = root.querySelectorAll(".vf-slide-wrap");
+    if (wraps[startIndex]) {
+      wraps[startIndex].scrollIntoView({ block: "start" });
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
+            const idx = Number(entry.target.dataset.index);
+            if (!Number.isNaN(idx)) {
+              setActiveIndex(idx);
+              setShowComments(false);
+            }
+          }
+        });
+      },
+      { root, threshold: [0.6] }
+    );
+
+    wraps.forEach((w) => observer.observe(w));
+    return () => observer.disconnect();
+  }, [posts, startIndex]);
+
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  async function handleShare(post) {
+    const url = post.image_url;
+    const title = `@${post.username} on 5-Min-Chat`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title, url, text: post.caption || title });
+      } else if (navigator.clipboard) {
+        await navigator.clipboard.writeText(url);
+        alert("Link copied!");
+      }
+    } catch {
+      /* cancelled */
+    }
+  }
+
+  function handleRemix(post) {
+    try {
+      sessionStorage.setItem(
+        "5minchat_remix",
+        JSON.stringify({ imageUrl: post.image_url, caption: post.caption || "" })
+      );
+    } catch {
+      /* ignore */
+    }
+    alert("Remix saved — open the Post tab to create a new post inspired by this.");
+  }
+
+  return (
+    <div className="fp-viewer">
+      <button className="fp-close" onClick={onClose} aria-label="Close">
+        <XIcon size={22} />
+      </button>
+
+      <div className="vf-scroller" ref={containerRef}>
+        {posts.map((post, i) => {
+          const liked = (post.likes || []).includes(myId);
+          const disliked = !!dislikes[post.id];
+          const isVideo = isVideoUrl(post.image_url);
+          const isActive = i === activeIndex;
+
+          return (
+            <div key={post.id} className="vf-slide-wrap" data-index={i}>
+              <div className="vf-slide">
+                {isVideo ? (
+                  <FullPageVideo src={post.image_url} isActive={isActive} />
+                ) : (
+                  <img className="vf-video fp-image" src={post.image_url} alt="" />
+                )}
+
+                <div className="vf-gradient" />
+
+                <div className="vf-overlay">
+                  <div className="vf-meta">
+                    <button
+                      className="vf-username"
+                      onClick={() => onViewProfile?.(post.persistent_id)}
+                    >
+                      @{post.username}
+                    </button>
+                    <span className="vf-time">{timeAgoShort(post.created_at)}</span>
+                    {post.caption && <p className="vf-caption">{post.caption}</p>}
+                  </div>
+
+                  <div className="vf-actions">
+                    <button
+                      className={`vf-action-btn ${liked ? "liked" : ""}`}
+                      onClick={() => onLike(post.id)}
+                      aria-label="Like"
+                    >
+                      <HeartIcon size={28} filled={liked} />
+                      <span>{(post.likes || []).length}</span>
+                    </button>
+
+                    <button
+                      className={`vf-action-btn ${disliked ? "disliked" : ""}`}
+                      onClick={() => onDislike(post.id)}
+                      aria-label="Dislike"
+                    >
+                      <DislikeIcon size={26} filled={disliked} />
+                    </button>
+
+                    <button
+                      className="vf-action-btn"
+                      onClick={() => setShowComments((v) => !v)}
+                      aria-label="Comments"
+                    >
+                      <CommentIcon size={26} />
+                    </button>
+
+                    <button
+                      className="vf-action-btn"
+                      onClick={() => handleShare(post)}
+                      aria-label="Share"
+                    >
+                      <ShareIcon size={26} />
+                    </button>
+
+                    <button
+                      className="vf-action-btn"
+                      onClick={() => handleRemix(post)}
+                      aria-label="Remix"
+                    >
+                      <RemixIcon size={26} />
+                    </button>
+                  </div>
+                </div>
+
+                {showComments && isActive && (
+                  <CommentPanel
+                    postId={post.id}
+                    currentUser={currentUser}
+                    accessToken={accessToken}
+                    onClose={() => setShowComments(false)}
+                  />
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function FullPageVideo({ src, isActive }) {
+  const ref = useRef(null);
+  const [muted, setMuted] = useState(true);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (isActive) {
+      el.currentTime = 0;
+      el.play().catch(() => {});
+    } else {
+      el.pause();
+    }
+  }, [isActive]);
+
+  function toggleMute(e) {
+    e.stopPropagation();
+    const el = ref.current;
+    if (!el) return;
+    el.muted = !el.muted;
+    setMuted(el.muted);
+  }
+
+  return (
+    <video
+      ref={ref}
+      className="vf-video"
+      src={src}
+      playsInline
+      muted={muted}
+      loop
+      preload="metadata"
+      onClick={toggleMute}
+    />
+  );
+}
+
 export default function Feed({ refreshSignal, onViewProfile, currentUser, accessToken }) {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expandedPostId, setExpandedPostId] = useState(null);
   const [mediaFilter, setMediaFilter] = useState("all");
+  const [viewerIndex, setViewerIndex] = useState(null);
+  const [dislikes, setDislikes] = useState({});
   const myId = currentUser?.id;
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -264,6 +620,11 @@ export default function Feed({ refreshSignal, onViewProfile, currentUser, access
         return { ...p, likes };
       })
     );
+    setDislikes((d) => {
+      const next = { ...d };
+      delete next[postId];
+      return next;
+    });
     try {
       await fetch(`${BACKEND_URL}/api/posts/${postId}/like`, {
         method: "POST",
@@ -274,6 +635,19 @@ export default function Feed({ refreshSignal, onViewProfile, currentUser, access
       });
     } catch {
       // optimistic
+    }
+  }
+
+  function toggleDislike(postId) {
+    setDislikes((d) => {
+      const next = { ...d };
+      if (next[postId]) delete next[postId];
+      else next[postId] = true;
+      return next;
+    });
+    const post = posts.find((p) => p.id === postId);
+    if (post && (post.likes || []).includes(myId)) {
+      toggleLike(postId);
     }
   }
 
@@ -393,7 +767,7 @@ export default function Feed({ refreshSignal, onViewProfile, currentUser, access
       )}
 
       <div className="post-list">
-        {visiblePosts.map((post) => {
+        {visiblePosts.map((post, idx) => {
           const liked = (post.likes || []).includes(myId);
           const isExpanded = expandedPostId === post.id;
           return (
@@ -407,7 +781,10 @@ export default function Feed({ refreshSignal, onViewProfile, currentUser, access
                 </button>
                 <span className="post-time">{timeAgo(post.created_at)}</span>
               </div>
-              <PostMedia url={post.image_url} />
+              <PostMedia
+                url={post.image_url}
+                onOpen={() => setViewerIndex(idx)}
+              />
               {post.caption && <p className="post-caption">{post.caption}</p>}
               <div className="post-actions">
                 <button
@@ -417,10 +794,37 @@ export default function Feed({ refreshSignal, onViewProfile, currentUser, access
                   <HeartIcon size={19} filled={liked} /> {(post.likes || []).length}
                 </button>
                 <button
+                  className={`like-btn ${dislikes[post.id] ? "disliked" : ""}`}
+                  onClick={() => toggleDislike(post.id)}
+                >
+                  <DislikeIcon size={18} filled={!!dislikes[post.id]} />
+                </button>
+                <button
                   className="link-btn"
                   onClick={() => setExpandedPostId(isExpanded ? null : post.id)}
                 >
                   {isExpanded ? "Hide comments" : "Comments"}
+                </button>
+                <button
+                  className="link-btn"
+                  onClick={async () => {
+                    try {
+                      if (navigator.share) {
+                        await navigator.share({
+                          title: `@${post.username}`,
+                          url: post.image_url,
+                          text: post.caption || "",
+                        });
+                      } else if (navigator.clipboard) {
+                        await navigator.clipboard.writeText(post.image_url);
+                        alert("Link copied!");
+                      }
+                    } catch {
+                      /* cancelled */
+                    }
+                  }}
+                >
+                  Share
                 </button>
               </div>
               {isExpanded && (
@@ -430,6 +834,24 @@ export default function Feed({ refreshSignal, onViewProfile, currentUser, access
           );
         })}
       </div>
+
+      {viewerIndex !== null && (
+        <FullPageViewer
+          posts={visiblePosts}
+          startIndex={viewerIndex}
+          myId={myId}
+          accessToken={accessToken}
+          currentUser={currentUser}
+          onClose={() => setViewerIndex(null)}
+          onLike={toggleLike}
+          onDislike={toggleDislike}
+          onViewProfile={(id) => {
+            setViewerIndex(null);
+            onViewProfile?.(id);
+          }}
+          dislikes={dislikes}
+        />
+      )}
     </div>
   );
 }
