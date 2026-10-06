@@ -4,6 +4,21 @@ import { isVideoUrl } from "../cloudinary.js";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
 
+const MEDIA_BOX = {
+  position: "relative",
+  width: "100%",
+  aspectRatio: "4 / 5",
+  background: "var(--dusk-2, #1a1e28)",
+  overflow: "hidden",
+};
+
+const MEDIA_FILL = {
+  width: "100%",
+  height: "100%",
+  objectFit: "cover",
+  display: "block",
+};
+
 function timeAgo(iso) {
   const diffMs = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diffMs / 60000);
@@ -39,10 +54,11 @@ function PostMedia({ url }) {
 
   if (video) {
     return (
-      <div className="post-media" ref={containerRef}>
+      <div className="post-media" ref={containerRef} style={MEDIA_BOX}>
         <video
           ref={videoRef}
           className="post-image post-video"
+          style={MEDIA_FILL}
           src={url}
           controls
           playsInline
@@ -56,8 +72,8 @@ function PostMedia({ url }) {
   }
 
   return (
-    <div className="post-media">
-      <img className="post-image" src={url} alt="" loading="lazy" />
+    <div className="post-media" style={MEDIA_BOX}>
+      <img className="post-image" style={MEDIA_FILL} src={url} alt="" loading="lazy" />
     </div>
   );
 }
@@ -160,7 +176,7 @@ export default function Feed({ refreshSignal, onViewProfile, currentUser, access
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expandedPostId, setExpandedPostId] = useState(null);
-  const [mediaFilter, setMediaFilter] = useState("all"); // all | video | photo
+  const [mediaFilter, setMediaFilter] = useState("all");
   const myId = currentUser?.id;
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -189,7 +205,6 @@ export default function Feed({ refreshSignal, onViewProfile, currentUser, access
     setSearchQuery(value);
     setShowResults(true);
     clearTimeout(searchDebounce.current);
-
     const trimmed = value.trim();
     if (!trimmed) {
       setSearchResults([]);
@@ -258,7 +273,7 @@ export default function Feed({ refreshSignal, onViewProfile, currentUser, access
         },
       });
     } catch {
-      // optimistic UI
+      // optimistic
     }
   }
 
