@@ -51,6 +51,15 @@ export function UserIcon(props) {
   );
 }
 
+export function VideoIcon(props) {
+  return (
+    <svg {...base(props)}>
+      <rect x="3" y="5" width="14" height="14" rx="2.5" />
+      <path d="M17 10.5 21 8v8l-4-2.5" />
+    </svg>
+  );
+}
+
 export function SettingsIcon(props) {
   return (
     <svg {...base(props)}>
