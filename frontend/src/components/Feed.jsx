@@ -55,7 +55,11 @@ function PostMedia({ url }) {
     );
   }
 
-  return <img className="post-image" src={url} alt="" loading="lazy" />;
+  return (
+    <div className="post-media">
+      <img className="post-image" src={url} alt="" loading="lazy" />
+    </div>
+  );
 }
 
 function CommentSection({ postId, currentUser, accessToken }) {
