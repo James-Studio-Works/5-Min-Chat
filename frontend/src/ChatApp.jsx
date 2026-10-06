@@ -3,6 +3,7 @@ import { socket } from "./socket";
 import Landing from "./components/Landing.jsx";
 import Waiting from "./components/Waiting.jsx";
 import ChatRoom from "./components/ChatRoom.jsx";
+import GroupChatRoom from "./components/GroupChatRoom.jsx";
 import EndScreen from "./components/EndScreen.jsx";
 import Friends from "./components/Friends.jsx";
 import { USERNAME_KEY, getOrCreatePersistentId } from "./identity.js";
@@ -26,25 +27,27 @@ export default function ChatApp() {
   const [usernameDraft, setUsernameDraft] = useState(localStorage.getItem(USERNAME_KEY) || "");
   const [usernameError, setUsernameError] = useState(null);
   const [session, setSession] = useState(null);
+  const [groupSession, setGroupSession] = useState(null);
   const [endReason, setEndReason] = useState(null);
   const [connectionError, setConnectionError] = useState(false);
   const [momentsCount, setMomentsCount] = useState(getMomentsCount());
   const [friendRequestIncoming, setFriendRequestIncoming] = useState(null);
   const [friendRequestOutgoingStatus, setFriendRequestOutgoingStatus] = useState(null);
+  const [groupBusy, setGroupBusy] = useState(false);
+  const [groupError, setGroupError] = useState(null);
 
   const persistentId = getOrCreatePersistentId();
 
-  const sendIdentify = useCallback((usernameOverride) => {
-    const usernameToSend = usernameOverride ?? localStorage.getItem(USERNAME_KEY) ?? "";
-    socket.emit(
-      "identify",
-      { persistentId, username: usernameToSend },
-      (res) => {
+  const sendIdentify = useCallback(
+    (usernameOverride) => {
+      const usernameToSend = usernameOverride ?? localStorage.getItem(USERNAME_KEY) ?? "";
+      socket.emit("identify", { persistentId, username: usernameToSend }, (res) => {
         if (res?.ok) {
           setYourName(res.appliedName);
           if (res.usernameRejectedReason) {
             setUsernameError(
-              res.usernameRejectedReason === "profanity" || res.usernameRejectedReason === "impersonation"
+              res.usernameRejectedReason === "profanity" ||
+                res.usernameRejectedReason === "impersonation"
                 ? "That username isn't allowed - try something else."
                 : res.usernameRejectedReason === "invalid_characters"
                 ? "Usernames can only use letters, numbers, spaces, - and _"
@@ -54,9 +57,10 @@ export default function ChatApp() {
             setUsernameError(null);
           }
         }
-      }
-    );
-  }, [persistentId]);
+      });
+    },
+    [persistentId]
+  );
 
   useEffect(() => {
     function handleConnected({ anonName }) {
@@ -119,12 +123,70 @@ export default function ChatApp() {
     setView("landing");
   }, []);
 
+  const handleCreateGroup = useCallback(() => {
+    if (!socket.connected) socket.connect();
+    setGroupError(null);
+    setGroupBusy(true);
+    sendIdentify(usernameDraft);
+    socket.emit("create_group", (res) => {
+      setGroupBusy(false);
+      if (!res?.ok) {
+        setGroupError(
+          res?.error === "already_in_room"
+            ? "You're already in a chat."
+            : "Couldn't create a group — try again."
+        );
+        return;
+      }
+      setGroupSession({
+        roomId: res.roomId,
+        endTime: res.endTime,
+        yourName: res.yourName,
+        code: res.code,
+        members: res.members || [],
+      });
+      setView("group");
+    });
+  }, [sendIdentify, usernameDraft]);
+
+  const handleJoinGroup = useCallback(
+    (code) => {
+      if (!socket.connected) socket.connect();
+      setGroupError(null);
+      setGroupBusy(true);
+      sendIdentify(usernameDraft);
+      socket.emit("join_group", { code }, (res) => {
+        setGroupBusy(false);
+        if (!res?.ok) {
+          const messages = {
+            invalid_code: "That code isn't valid or the room closed.",
+            room_full: "That group is full (max 8).",
+            session_expired: "That group already timed out.",
+            already_in_room: "You're already in a chat.",
+          };
+          setGroupError(messages[res?.error] || "Couldn't join — try again.");
+          return;
+        }
+        setGroupSession({
+          roomId: res.roomId,
+          endTime: res.endTime,
+          yourName: res.yourName,
+          code: res.code,
+          members: res.members || [],
+        });
+        setView("group");
+      });
+    },
+    [sendIdentify, usernameDraft]
+  );
+
   const handleSessionEnd = useCallback(({ reason }) => {
     setEndReason(reason);
     if (reason === "timeout" || reason === "left" || reason === "partner_left") {
       setMomentsCount(bumpMomentsCount());
     }
     setSession(null);
+    setGroupSession(null);
     setView("end");
   }, []);
 
@@ -152,16 +214,18 @@ export default function ChatApp() {
       {view === "landing" && (
         <Landing
           onStart={handleStart}
+          onCreateGroup={handleCreateGroup}
+          onJoinGroup={handleJoinGroup}
           connectionError={connectionError}
           usernameDraft={usernameDraft}
           onUsernameChange={handleUsernameChange}
           usernameError={usernameError}
           onOpenFriends={handleOpenFriends}
+          groupBusy={groupBusy}
+          groupError={groupError}
         />
       )}
-      {view === "waiting" && (
-        <Waiting onCancel={handleCancelWaiting} yourName={yourName} />
-      )}
+      {view === "waiting" && <Waiting onCancel={handleCancelWaiting} yourName={yourName} />}
       {view === "chat" && session && (
         <ChatRoom
           session={session}
@@ -171,12 +235,11 @@ export default function ChatApp() {
           friendRequestOutgoingStatus={friendRequestOutgoingStatus}
         />
       )}
+      {view === "group" && groupSession && (
+        <GroupChatRoom session={groupSession} onSessionEnd={handleSessionEnd} />
+      )}
       {view === "end" && (
-        <EndScreen
-          endReason={endReason}
-          onRestart={handleRestart}
-          momentsCount={momentsCount}
-        />
+        <EndScreen endReason={endReason} onRestart={handleRestart} momentsCount={momentsCount} />
       )}
       {view === "friends" && (
         <Friends onBack={() => setView("landing")} onStartFriendChat={handleStartFriendChat} />
