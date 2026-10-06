@@ -1,11 +1,14 @@
 import { useState } from "react";
-import { uploadImage } from "../cloudinary.js";
+import { uploadMedia } from "../cloudinary.js";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
 
 export default function NewPost({ onPosted, currentUser, accessToken }) {
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
+  const [isVideo, setIsVideo] = useState(false);
   const [caption, setCaption] = useState("");
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState(null);
@@ -13,27 +16,37 @@ export default function NewPost({ onPosted, currentUser, accessToken }) {
   function handleFileChange(e) {
     const selected = e.target.files?.[0];
     if (!selected) return;
-    if (!selected.type.startsWith("image/")) {
-      setError("Please choose an image file.");
+
+    const video = selected.type.startsWith("video/");
+    const image = selected.type.startsWith("image/");
+
+    if (!video && !image) {
+      setError("Please choose a photo or video.");
       return;
     }
-    if (selected.size > 8 * 1024 * 1024) {
-      setError("Image is too large - please choose something under 8MB.");
+    if (image && selected.size > MAX_IMAGE_BYTES) {
+      setError("Image is too large — please choose something under 8MB.");
       return;
     }
+    if (video && selected.size > MAX_VIDEO_BYTES) {
+      setError("Video is too large — please choose something under 50MB.");
+      return;
+    }
+
     setError(null);
     setFile(selected);
+    setIsVideo(video);
     setPreviewUrl(URL.createObjectURL(selected));
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!file) return setError("Choose an image first.");
+    if (!file) return setError("Choose a photo or video first.");
 
     setError(null);
     setStatus("uploading");
     try {
-      const imageUrl = await uploadImage(file);
+      const { url: imageUrl } = await uploadMedia(file);
 
       setStatus("posting");
       const res = await fetch(`${BACKEND_URL}/api/posts`, {
@@ -43,7 +56,10 @@ export default function NewPost({ onPosted, currentUser, accessToken }) {
           Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
-          username: currentUser?.user_metadata?.full_name || currentUser?.email?.split("@")[0] || "Anonymous",
+          username:
+            currentUser?.user_metadata?.full_name ||
+            currentUser?.email?.split("@")[0] ||
+            "Anonymous",
           imageUrl,
           caption: caption.trim() || null,
         }),
@@ -61,6 +77,7 @@ export default function NewPost({ onPosted, currentUser, accessToken }) {
 
       setFile(null);
       setPreviewUrl(null);
+      setIsVideo(false);
       setCaption("");
       setStatus("idle");
       onPosted?.();
@@ -68,23 +85,45 @@ export default function NewPost({ onPosted, currentUser, accessToken }) {
       setStatus("error");
       setError(
         e.message === "image_upload_not_configured"
-          ? "Image uploads aren't set up yet - see README for Cloudinary setup."
+          ? "Uploads aren't set up yet - see README for Cloudinary setup."
           : e.message
       );
     }
   }
 
+  const busy = status === "uploading" || status === "posting";
+
   return (
     <div className="newpost-screen">
       <h2>New Post</h2>
+      <p className="lede small" style={{ marginBottom: 12 }}>
+        Share a photo or a short video with the feed.
+      </p>
       <form className="newpost-form" onSubmit={handleSubmit}>
         <label className="image-picker">
           {previewUrl ? (
-            <img src={previewUrl} alt="Preview" className="image-preview" />
+            isVideo ? (
+              <video
+                src={previewUrl}
+                className="image-preview"
+                controls
+                playsInline
+                muted
+              />
+            ) : (
+              <img src={previewUrl} alt="Preview" className="image-preview" />
+            )
           ) : (
-            <span className="image-picker-placeholder">Tap to choose a photo</span>
+            <span className="image-picker-placeholder">
+              Tap to choose a photo or video
+            </span>
           )}
-          <input type="file" accept="image/*" onChange={handleFileChange} hidden />
+          <input
+            type="file"
+            accept="image/*,video/*"
+            onChange={handleFileChange}
+            hidden
+          />
         </label>
 
         <textarea
@@ -97,12 +136,14 @@ export default function NewPost({ onPosted, currentUser, accessToken }) {
 
         {error && <p className="error-text">{error}</p>}
 
-        <button
-          type="submit"
-          className="btn-primary"
-          disabled={status === "uploading" || status === "posting"}
-        >
-          {status === "uploading" ? "Uploading image…" : status === "posting" ? "Posting…" : "Share Post"}
+        <button type="submit" className="btn-primary" disabled={busy}>
+          {status === "uploading"
+            ? isVideo
+              ? "Uploading video…"
+              : "Uploading image…"
+            : status === "posting"
+            ? "Posting…"
+            : "Share Post"}
         </button>
       </form>
     </div>
