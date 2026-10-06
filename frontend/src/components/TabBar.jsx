@@ -1,7 +1,8 @@
-import { HomeIcon, CameraIcon, ChatIcon, UserIcon } from "../icons/Icons.jsx";
+import { HomeIcon, CameraIcon, ChatIcon, UserIcon, VideoIcon } from "../icons/Icons.jsx";
 
 const TABS = [
   { id: "feed", label: "Feed", Icon: HomeIcon },
+  { id: "videos", label: "Videos", Icon: VideoIcon },
   { id: "newpost", label: "Post", Icon: CameraIcon },
   { id: "chat", label: "Chat", Icon: ChatIcon },
   { id: "profile", label: "Profile", Icon: UserIcon },

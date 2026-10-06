@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import Feed from "./components/Feed.jsx";
+import VideoFeed from "./components/VideoFeed.jsx";
 import NewPost from "./components/NewPost.jsx";
 import TabBar from "./components/TabBar.jsx";
 import Profile from "./components/Profile.jsx";
@@ -87,7 +88,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <div className="app-content">
+      <div className={`app-content ${activeTab === "videos" ? "app-content--videos" : ""}`}>
         {activeTab === "chat" ? (
           <ChatApp />
         ) : authLoading ? (
@@ -108,6 +109,14 @@ export default function App() {
           <>
             {activeTab === "feed" && (
               <Feed
+                refreshSignal={feedRefreshSignal}
+                onViewProfile={handleViewProfile}
+                currentUser={user}
+                accessToken={accessToken}
+              />
+            )}
+            {activeTab === "videos" && (
+              <VideoFeed
                 refreshSignal={feedRefreshSignal}
                 onViewProfile={handleViewProfile}
                 currentUser={user}
