@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { uploadImage } from "../cloudinary.js";
+import { uploadImage, isVideoUrl } from "../cloudinary.js";
 import { ArrowLeftIcon, SettingsIcon, LockIcon } from "../icons/Icons.jsx";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
@@ -368,9 +368,22 @@ export default function Profile({ persistentId, currentUser, accessToken, onBack
       {!postsHidden && !isBlocked && (
         <div className="profile-grid">
           {posts.length === 0 && <p className="chat-hint">No posts yet.</p>}
-          {posts.map((post) => (
-            <img key={post.id} className="profile-grid-item" src={post.image_url} alt="" loading="lazy" />
-          ))}
+          {posts.map((post) =>
+            isVideoUrl(post.image_url) ? (
+              <div key={post.id} className="profile-grid-item profile-grid-video">
+                <video src={post.image_url} muted playsInline preload="metadata" />
+                <span className="profile-grid-video-badge">▶</span>
+              </div>
+            ) : (
+              <img
+                key={post.id}
+                className="profile-grid-item"
+                src={post.image_url}
+                alt=""
+                loading="lazy"
+              />
+            )
+          )}
         </div>
       )}
     </div>
