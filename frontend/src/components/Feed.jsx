@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { HeartIcon, SearchIcon, XIcon } from "../icons/Icons.jsx";
+import { isVideoUrl } from "../cloudinary.js";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
 
@@ -11,6 +12,50 @@ function timeAgo(iso) {
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;
   return `${Math.floor(hrs / 24)}d ago`;
+}
+
+function PostMedia({ url }) {
+  const videoRef = useRef(null);
+  const containerRef = useRef(null);
+  const video = isVideoUrl(url);
+
+  useEffect(() => {
+    if (!video || !videoRef.current || !containerRef.current) return;
+
+    const el = videoRef.current;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && entry.intersectionRatio >= 0.55) {
+          el.play().catch(() => {});
+        } else {
+          el.pause();
+        }
+      },
+      { threshold: [0, 0.55, 1] }
+    );
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [video, url]);
+
+  if (video) {
+    return (
+      <div className="post-media" ref={containerRef}>
+        <video
+          ref={videoRef}
+          className="post-image post-video"
+          src={url}
+          controls
+          playsInline
+          muted
+          loop
+          preload="metadata"
+        />
+        <span className="post-video-badge">Video</span>
+      </div>
+    );
+  }
+
+  return <img className="post-image" src={url} alt="" loading="lazy" />;
 }
 
 function CommentSection({ postId, currentUser, accessToken }) {
@@ -50,7 +95,10 @@ function CommentSection({ postId, currentUser, accessToken }) {
           Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
-          username: currentUser?.user_metadata?.full_name || currentUser?.email?.split("@")[0] || "Anonymous",
+          username:
+            currentUser?.user_metadata?.full_name ||
+            currentUser?.email?.split("@")[0] ||
+            "Anonymous",
           text,
         }),
       });
@@ -108,6 +156,7 @@ export default function Feed({ refreshSignal, onViewProfile, currentUser, access
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expandedPostId, setExpandedPostId] = useState(null);
+  const [mediaFilter, setMediaFilter] = useState("all"); // all | video | photo
   const myId = currentUser?.id;
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -152,8 +201,6 @@ export default function Feed({ refreshSignal, onViewProfile, currentUser, access
     setShowResults(false);
   }
 
-  // Close the results dropdown on an outside click, so it doesn't linger
-  // over the feed once someone's done searching.
   useEffect(() => {
     function handleClickOutside(e) {
       if (searchBoxRef.current && !searchBoxRef.current.contains(e.target)) {
@@ -207,9 +254,15 @@ export default function Feed({ refreshSignal, onViewProfile, currentUser, access
         },
       });
     } catch {
-      // optimistic UI already reflects intent; ignore transient failures
+      // optimistic UI
     }
   }
+
+  const visiblePosts = posts.filter((p) => {
+    if (mediaFilter === "all") return true;
+    const v = isVideoUrl(p.image_url);
+    return mediaFilter === "video" ? v : !v;
+  });
 
   if (loading && posts.length === 0) {
     return (
@@ -236,6 +289,27 @@ export default function Feed({ refreshSignal, onViewProfile, currentUser, access
         <h2>Home</h2>
         <button className="link-btn" onClick={loadFeed}>
           Refresh
+        </button>
+      </div>
+
+      <div className="feed-filter-row">
+        <button
+          className={`feed-filter-chip ${mediaFilter === "all" ? "active" : ""}`}
+          onClick={() => setMediaFilter("all")}
+        >
+          All
+        </button>
+        <button
+          className={`feed-filter-chip ${mediaFilter === "video" ? "active" : ""}`}
+          onClick={() => setMediaFilter("video")}
+        >
+          Videos
+        </button>
+        <button
+          className={`feed-filter-chip ${mediaFilter === "photo" ? "active" : ""}`}
+          onClick={() => setMediaFilter("photo")}
+        >
+          Photos
         </button>
       </div>
 
@@ -289,12 +363,18 @@ export default function Feed({ refreshSignal, onViewProfile, currentUser, access
         )}
       </div>
 
-      {posts.length === 0 && (
-        <p className="chat-hint">No posts yet. Be the first to share something.</p>
+      {visiblePosts.length === 0 && (
+        <p className="chat-hint">
+          {mediaFilter === "video"
+            ? "No videos yet. Share one from the Post tab."
+            : mediaFilter === "photo"
+            ? "No photos in the feed yet."
+            : "No posts yet. Be the first to share something."}
+        </p>
       )}
 
       <div className="post-list">
-        {posts.map((post) => {
+        {visiblePosts.map((post) => {
           const liked = (post.likes || []).includes(myId);
           const isExpanded = expandedPostId === post.id;
           return (
@@ -308,7 +388,7 @@ export default function Feed({ refreshSignal, onViewProfile, currentUser, access
                 </button>
                 <span className="post-time">{timeAgo(post.created_at)}</span>
               </div>
-              <img className="post-image" src={post.image_url} alt="" loading="lazy" />
+              <PostMedia url={post.image_url} />
               {post.caption && <p className="post-caption">{post.caption}</p>}
               <div className="post-actions">
                 <button
