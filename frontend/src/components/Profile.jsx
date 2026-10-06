@@ -15,6 +15,32 @@ const HANDLE_ERROR_MESSAGES = {
   invalid: "Enter a username.",
 };
 
+const GRID_ITEM = {
+  width: "100%",
+  aspectRatio: "1",
+  objectFit: "cover",
+  borderRadius: 6,
+  background: "var(--dusk-2, #1a1e28)",
+  display: "block",
+  overflow: "hidden",
+};
+
+const GRID_VIDEO_WRAP = {
+  position: "relative",
+  width: "100%",
+  aspectRatio: "1",
+  overflow: "hidden",
+  borderRadius: 6,
+  background: "var(--dusk-2, #1a1e28)",
+};
+
+const GRID_VIDEO = {
+  width: "100%",
+  height: "100%",
+  objectFit: "cover",
+  display: "block",
+};
+
 export default function Profile({ persistentId, currentUser, accessToken, onBack, onViewProfile, onOpenSettings }) {
   const myPersistentId = currentUser?.id;
   const isOwn = persistentId === myPersistentId;
@@ -366,18 +392,27 @@ export default function Profile({ persistentId, currentUser, accessToken, onBack
       )}
 
       {!postsHidden && !isBlocked && (
-        <div className="profile-grid">
+        <div
+          className="profile-grid"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(3, 1fr)",
+            gap: 3,
+            marginTop: 22,
+          }}
+        >
           {posts.length === 0 && <p className="chat-hint">No posts yet.</p>}
           {posts.map((post) =>
             isVideoUrl(post.image_url) ? (
-              <div key={post.id} className="profile-grid-item profile-grid-video">
-                <video src={post.image_url} muted playsInline preload="metadata" />
+              <div key={post.id} className="profile-grid-item profile-grid-video" style={GRID_VIDEO_WRAP}>
+                <video src={post.image_url} muted playsInline preload="metadata" style={GRID_VIDEO} />
                 <span className="profile-grid-video-badge">▶</span>
               </div>
             ) : (
               <img
                 key={post.id}
                 className="profile-grid-item"
+                style={GRID_ITEM}
                 src={post.image_url}
                 alt=""
                 loading="lazy"
