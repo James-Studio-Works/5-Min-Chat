@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { uploadMedia } from "../cloudinary.js";
+import { CameraIcon } from "../icons/Icons.jsx";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
@@ -36,7 +37,15 @@ export default function NewPost({ onPosted, currentUser, accessToken }) {
     setError(null);
     setFile(selected);
     setIsVideo(video);
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(URL.createObjectURL(selected));
+  }
+
+  function clearMedia() {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setFile(null);
+    setPreviewUrl(null);
+    setIsVideo(false);
   }
 
   async function handleSubmit(e) {
@@ -67,17 +76,15 @@ export default function NewPost({ onPosted, currentUser, accessToken }) {
       const data = await res.json();
       if (!res.ok) {
         if (data?.error === "moderated") {
-          throw new Error("Your caption didn't meet the content guidelines - try rewording it.");
+          throw new Error("Your caption didn't meet the content guidelines — try rewording it.");
         }
         if (data?.error === "not_authenticated" || data?.error === "invalid_session") {
-          throw new Error("Your session expired - try logging in again.");
+          throw new Error("Your session expired — try logging in again.");
         }
         throw new Error(data?.error || "post_failed");
       }
 
-      setFile(null);
-      setPreviewUrl(null);
-      setIsVideo(false);
+      clearMedia();
       setCaption("");
       setStatus("idle");
       onPosted?.();
@@ -85,38 +92,59 @@ export default function NewPost({ onPosted, currentUser, accessToken }) {
       setStatus("error");
       setError(
         e.message === "image_upload_not_configured"
-          ? "Uploads aren't set up yet - see README for Cloudinary setup."
+          ? "Uploads aren't set up yet — see README for Cloudinary setup."
           : e.message
       );
     }
   }
 
   const busy = status === "uploading" || status === "posting";
+  const remaining = 280 - caption.length;
 
   return (
     <div className="newpost-screen">
-      <h2>New Post</h2>
-      <p className="lede small" style={{ marginBottom: 12 }}>
-        Share a photo or a short video with the feed.
-      </p>
+      <header className="newpost-header">
+        <h2>New Post</h2>
+        <p className="newpost-sub">Share a photo or short video with the feed</p>
+      </header>
+
       <form className="newpost-form" onSubmit={handleSubmit}>
-        <label className="image-picker">
+        <label className={`image-picker ${previewUrl ? "has-preview" : ""}`}>
           {previewUrl ? (
-            isVideo ? (
-              <video
-                src={previewUrl}
-                className="image-preview"
-                controls
-                playsInline
-                muted
-              />
-            ) : (
-              <img src={previewUrl} alt="Preview" className="image-preview" />
-            )
+            <>
+              {isVideo ? (
+                <video
+                  src={previewUrl}
+                  className="image-preview"
+                  controls
+                  playsInline
+                  muted
+                />
+              ) : (
+                <img src={previewUrl} alt="Preview" className="image-preview" />
+              )}
+              <button
+                type="button"
+                className="image-picker-clear"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  clearMedia();
+                }}
+                aria-label="Remove media"
+              >
+                ×
+              </button>
+              <span className="image-picker-badge">{isVideo ? "Video" : "Photo"}</span>
+            </>
           ) : (
-            <span className="image-picker-placeholder">
-              Tap to choose a photo or video
-            </span>
+            <div className="image-picker-empty">
+              <div className="image-picker-icon">
+                <CameraIcon size={32} strokeWidth={1.6} />
+              </div>
+              <span className="image-picker-title">Tap to add media</span>
+              <span className="image-picker-hint">Photo or video · max 8MB / 50MB</span>
+            </div>
           )}
           <input
             type="file"
@@ -126,17 +154,23 @@ export default function NewPost({ onPosted, currentUser, accessToken }) {
           />
         </label>
 
-        <textarea
-          placeholder="Write a caption…"
-          value={caption}
-          onChange={(e) => setCaption(e.target.value)}
-          maxLength={280}
-          rows={3}
-        />
+        <div className="newpost-caption-wrap">
+          <textarea
+            className="newpost-caption"
+            placeholder="Write a caption…"
+            value={caption}
+            onChange={(e) => setCaption(e.target.value)}
+            maxLength={280}
+            rows={3}
+          />
+          <span className={`newpost-char-count ${remaining < 30 ? "warn" : ""}`}>
+            {remaining}
+          </span>
+        </div>
 
         {error && <p className="error-text">{error}</p>}
 
-        <button type="submit" className="btn-primary" disabled={busy}>
+        <button type="submit" className="btn-primary newpost-submit" disabled={busy || !file}>
           {status === "uploading"
             ? isVideo
               ? "Uploading video…"
