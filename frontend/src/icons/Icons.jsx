@@ -117,6 +117,49 @@ export function HeartIcon(props) {
   );
 }
 
+export function DislikeIcon(props) {
+  const filled = !!props.filled;
+  return (
+    <svg
+      {...base(props)}
+      fill={filled ? "currentColor" : "none"}
+      style={{ transform: "rotate(180deg)", ...(props.style || {}) }}
+    >
+      <path d="M12 20.5s-7-4.4-9.5-9C.9 8 2.3 4.5 5.6 4.5c1.9 0 3.3 1 4.4 2.6C11.1 5.5 12.5 4.5 14.4 4.5c3.3 0 4.7 3.5 3.1 7-2.5 4.6-9.5 9-9.5 9Z" />
+    </svg>
+  );
+}
+
+export function CommentIcon(props) {
+  return (
+    <svg {...base(props)}>
+      <path d="M4 12a8 8 0 1 1 3.2 6.4L4 20l1.2-3.4A7.96 7.96 0 0 1 4 12Z" />
+    </svg>
+  );
+}
+
+export function ShareIcon(props) {
+  return (
+    <svg {...base(props)}>
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="6" cy="12" r="3" />
+      <circle cx="18" cy="19" r="3" />
+      <path d="M8.6 13.5 15.4 17.5M15.4 6.5 8.6 10.5" />
+    </svg>
+  );
+}
+
+export function RemixIcon(props) {
+  return (
+    <svg {...base(props)}>
+      <path d="M16 3h5v5" />
+      <path d="M4 20 21 3" />
+      <path d="M21 16v5h-5" />
+      <path d="M15 15 4 4" />
+    </svg>
+  );
+}
+
 export function ChevronRightIcon(props) {
   return (
     <svg {...base(props)}>
