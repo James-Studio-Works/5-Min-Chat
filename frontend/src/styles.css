@@ -382,3 +382,177 @@ h1 {
   flex: 1; background: var(--void); border: 1.5px solid var(--border);
   border-radius: 999px; padding: 12px 16px; color: var(--paper); font-size: 14.5px; outline: none;
 }
+
+/* Landing page — modes, username, join group, principles */
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ash);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin: 0 0 12px;
+}
+.landing-hero-ring {
+  display: flex;
+  justify-content: center;
+  margin: 8px 0 18px;
+}
+.accent {
+  background: linear-gradient(135deg, var(--signal-bright), var(--ember));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.username-field {
+  text-align: left;
+  margin: 0 0 16px;
+  width: 100%;
+}
+.username-field label {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ash);
+  margin-bottom: 6px;
+}
+.username-field input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--dusk);
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  padding: 12px 16px;
+  color: var(--paper);
+  font-size: 14.5px;
+  outline: none;
+}
+.username-field input:focus {
+  border-color: var(--signal);
+}
+.username-field input::placeholder {
+  color: var(--ash-2);
+}
+.landing-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 8px 0 14px;
+  width: 100%;
+}
+.mode-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  background: var(--dusk);
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  color: var(--paper);
+  cursor: pointer;
+}
+.mode-card:hover:not(:disabled) {
+  border-color: var(--signal);
+  background: var(--dusk-2);
+}
+.mode-card:disabled {
+  opacity: 0.55;
+}
+.mode-card-primary {
+  background: linear-gradient(135deg, rgba(124, 106, 255, 0.18) 0%, rgba(124, 106, 255, 0.06) 100%);
+  border-color: rgba(124, 106, 255, 0.45);
+}
+.mode-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: var(--signal-soft);
+  color: var(--signal-bright);
+  margin-bottom: 2px;
+  font-size: 18px;
+}
+.mode-card-icon-group {
+  background: rgba(61, 214, 140, 0.14);
+}
+.mode-card-title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 15px;
+  color: var(--paper);
+}
+.mode-card-desc {
+  font-size: 12.5px;
+  color: var(--ash);
+  font-weight: 500;
+}
+.join-group-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin: 4px 0 10px;
+}
+.join-group-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--dusk);
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  padding: 11px 16px;
+  color: var(--paper);
+  font-size: 14px;
+  outline: none;
+}
+.join-group-input:focus {
+  border-color: var(--signal);
+}
+.join-group-input::placeholder {
+  color: var(--ash-2);
+}
+.friends-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 10px 0 6px;
+  background: var(--dusk);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 8px 16px;
+  color: var(--paper);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.friends-link:hover {
+  border-color: var(--signal);
+}
+.principles {
+  margin-top: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+}
+.principle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--ash);
+  line-height: 1.45;
+}
+.principle .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--signal);
+  flex-shrink: 0;
+  margin-top: 5px;
+}
